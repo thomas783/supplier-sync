@@ -32,6 +32,7 @@ classDiagram
         +Long roomTypeId
         +String roomTypeName
         +int maxOccupancy
+        +Boolean breakfastIncluded
         +Availability availability
         +Supplier supplier
         +Price price
@@ -41,7 +42,6 @@ classDiagram
         +Long averageNightlyAmount "평균 1박가 — 총액÷박수, 내림"
         +NightlyRate[] nightlyRates "일자별 실측 — 제공 공급사만"
         +String currency
-        +Boolean breakfastIncluded
     }
     class Availability {
         <<3상태>>
@@ -81,10 +81,11 @@ A의 날짜별 net+세금은 합산하면 세금 포함 총액이 되지만, B�
   비웁니다. 평균을 일자별로 복제해 채우는 방식은 실측이 아닌 값을 실측처럼 보이게 하므로 거부했습니다.
   이 필드는 교집합 원칙의 **첫 명시적 예외**입니다 — 항상 존재하는 값은 평균이고 일자별은 부가 정보라는
   위계를 두어, 예외가 소비자 분기 부담으로 번지지 않게 했습니다.
-- **`breakfastIncluded`** — 조식 포함 여부는 "요금의 조건"이므로 항상 요금과 같이 다닙니다. 같은
-  객실이라도 공급사에 따라 조식 포함이 달라, 총액만 나란히 두면 조건이 다른 상품을 같은 것처럼 비교하게
-  됩니다.
 - **`currency`** — ISO 4217 코드로 보존하되 환산하지 않습니다.
+
+조식 포함 여부(`breakfastIncluded`)는 돈이 아니라 상품의 조건이므로 `price` 안이 아닌 **`StayProduct`의
+속성**으로 둡니다. 다만 "가격을 볼 때 조건이 항상 나란히 보여야 한다"는 취지는 유지합니다 — 같은 객실이라도
+공급사에 따라 조식 포함이 달라, 총액만 나란히 두면 조건이 다른 상품을 같은 것처럼 비교하게 되기 때문입니다.
 
 금액 타입은 통화 최소 단위 정수(`Long`)입니다. 공급사 스펙이 금액을 최소 단위 정수로 주고 우리 연산은
 합산·나눗셈(내림)뿐이라 부동소수점 오차 여지가 없습니다. **현재 범위는 KRW만 고려**하며, 추후 환율이
@@ -163,7 +164,7 @@ A의 날짜별 net+세금은 합산하면 세금 포함 총액이 되지만, B�
 | `property` | 숙소. 엔티티 `Property`, 테이블 `property` | hotelCode / hotelName | propertyId / propertyName |
 | `roomType` | 객실 타입(개별 물리 객실 아님). 엔티티 `RoomType`, 테이블 `room_type` | roomTypeCode / roomTypeName | roomId / roomName |
 | `StayProduct` | 숙박 상품 단위 — 요금 + 가용성 + 출처가 붙은 검색 결과 항목 | — | — |
-| `price` | 요금 묶음(총액·평균 1박가·일자별 실측·통화·조식) | — | — |
+| `price` | 요금 묶음(총액·평균 1박가·일자별 실측·통화). 조식 여부는 `StayProduct` 속성 | — | — |
 | `availability` | StayProduct의 가용성 3상태: `AVAILABLE` / `SOLD_OUT` / `UNDETERMINED` | — | — |
 
 공급사 연동의 두 조회는 고유명사 없이 서술형으로 부릅니다.
