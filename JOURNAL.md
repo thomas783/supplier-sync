@@ -278,3 +278,18 @@ AI의 "0이면 일괄 제외" 제안을 사용자가 제품 관점에서 세분�
 offer는 이 결정으로 대체된다. 최종 용어집: `supplier` / `property` / `roomType` / `StayProduct` / `price` /
 `availability`(AVAILABLE·SOLD_OUT·UNDETERMINED) + 관례 용어들. 코드 서술: 숙소 목록 조회
 `fetchProperties()` · 매핑 동기화 `PropertySyncService` · 재고·요금 조회 `fetchStayProducts()`.
+
+### 22:37 · ERD 라운드 — 초안 수용, 감사 컬럼 타입을 DATETIME으로 수정
+
+**초안(AI)**: 단수 테이블 `property` / `room_type`, BIGINT 대리키 + 자연키
+UNIQUE(`uk_property_supplier_code`, `uk_room_type_property_code`) + FK 제약(`fk_room_type_property`,
+LAZY 연관이되 부모 id만 읽어 N+1 회피), 감사 컬럼은 DB 관리(`DEFAULT CURRENT_TIMESTAMP` / `ON UPDATE
+CURRENT_TIMESTAMP`), 요금·재고는 저장하지 않고 매핑만 저장.
+
+**결정(수용 + 수정)**: 초안은 전반 수용하되, 감사 컬럼 타입을 **`TIMESTAMP` → `DATETIME`으로 수정**(사용자).
+근거 — MySQL `TIMESTAMP`는 32비트 epoch 기반이라 **2038-01-19(UTC) 한계**가 있고(8.4에도 동일),
+`DATETIME`은 9999년까지 지원한다. AI가 사실 검증 후 수용. 딸린 함의 두 가지를 함께 확정했다:
+- `DEFAULT/ON UPDATE CURRENT_TIMESTAMP`는 `DATETIME`에서도 동일하게 동작하므로 DB 관리 방식은 그대로.
+- `DATETIME`은 세션 시간대 변환 없이 쓴 값을 그대로 저장하므로, **앱·DB 시간대를 KST(Asia/Seoul)로
+  고정**하는 것이 전제가 된다 — 시간대 정합이 타입 선택보다 중요해졌다.
+- 정밀도는 초 단위로 충분해 소수점(fractional seconds)은 두지 않는다.
