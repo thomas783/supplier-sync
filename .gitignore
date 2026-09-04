@@ -1,0 +1,30 @@
+### Gradle ###
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+### IntelliJ / IDE ###
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+.vscode/
+
+### Kotlin / Java ###
+*.class
+*.log
+hs_err_pid*
+
+### OS ###
+.DS_Store
+
+### Env / secrets ###
+*.env
+.env
+application-local.yml
+application-local.yaml
+
+### 로컬 전용 참고 자료 — 커밋 제외 ###
+.local/
+*.pdf
