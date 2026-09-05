@@ -136,6 +136,14 @@ class SupplierAClientTest {
     }
 
     @Test
+    fun `본문 없는 200 은 계약 위반 실패다 - 정상 빈 응답은 items 빈 배열로 온다`() {
+        server.enqueue(MockResponse().setResponseCode(200)) // 본문 없음
+
+        val ex = assertThrows(SupplierCallException::class.java) { client.fetchProperties() }
+        assertTrue(ex.reason.contains("empty response"))
+    }
+
+    @Test
     fun `무응답은 타임아웃으로 끊고 재시도 가능한 SupplierCallException 으로 변환된다`() {
         server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
 

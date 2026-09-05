@@ -118,6 +118,16 @@ class SupplierBClientTest {
     }
 
     @Test
+    fun `성공 코드인데 data 가 없으면 계약 위반 실패다 - 정상 빈 결과는 data 안의 빈 items 로 온다`() {
+        enqueueJson("""{"resultCode":"0000","resultMessage":"SUCCESS","data":null}""")
+
+        val ex = assertThrows(SupplierCallException::class.java) {
+            client.fetchStayProducts(query).block()
+        }
+        assertTrue(ex.reason.contains("success without data"))
+    }
+
+    @Test
     fun `무응답은 타임아웃으로 끊고 재시도 가능한 SupplierCallException 으로 변환된다`() {
         server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
 

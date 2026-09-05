@@ -50,6 +50,8 @@ data class SupplierBSearchItem(
     val breakfastIncluded: Boolean,
     val currency: String,
     val totalPrice: Long,
+    // 계약상 항상 true — B 는 세금 금액을 따로 주지 않고 포함 사실만 알려준다.
+    // totalPrice 를 검증 없이 gross(세금 포함 총액)로 신뢰하는 근거가 이 계약이다.
     val taxIncluded: Boolean,
     val inventory: List<SupplierBInventory> = emptyList(),
 )

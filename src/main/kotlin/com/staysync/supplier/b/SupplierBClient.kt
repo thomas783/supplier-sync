@@ -39,8 +39,8 @@ class SupplierBClient(
                 .block()
                 ?: throw SupplierCallException(supplier, "$PROPERTIES_ENDPOINT: empty response")
 
-            response.requireSuccess(PROPERTIES_ENDPOINT)
-                .data?.items.orEmpty().map { it.toSupplierProperty() }
+            response.requireSuccessData(PROPERTIES_ENDPOINT)
+                .items.map { it.toSupplierProperty() }
         } catch (e: Exception) {
             // 동기 경로의 실패 통일 지점 — 리액티브 경로의 onErrorMap 과 같은 변환기를 쓴다
             throw toSupplierError(supplier, PROPERTIES_ENDPOINT, e)
@@ -60,15 +60,17 @@ class SupplierBClient(
             .retrieve()
             .bodyToMono<SupplierBBaseResponse<SupplierBSearchData>>()
             .map { response ->
-                response.requireSuccess(SEARCH_ENDPOINT).data?.items.orEmpty().map { it.toStayProduct() }
+                response.requireSuccessData(SEARCH_ENDPOINT).items.map { it.toStayProduct() }
             }
             .onErrorMap { toSupplierError(supplier, SEARCH_ENDPOINT, it) }
 
     /**
-     * HTTP 200 이어도 본문 resultCode 로 실패를 판정한다 (실패 판정 통일).
-     * 실패면 [SupplierCallException] 을 던진다 — 리액티브 경로에서는 map 안에서 던져져 onError 신호로 전파된다.
+     * HTTP 200 이어도 본문 resultCode 로 실패를 판정하고 (실패 판정 통일), 성공이면 data 를 꺼낸다.
+     * 성공 코드인데 data 가 없는 응답은 빈 결과가 아니라 계약 위반이다 — 정상 빈 결과는 data 안의 빈
+     * items 로 오므로, 조용히 빈 리스트로 삼키면 깨진 응답과 진짜 빈 결과를 구분할 수 없게 된다.
+     * 실패면 [SupplierCallException] 을 던진다 — 리액티브 경로에서는 map 안에서 던져져 onError 로 전파된다.
      */
-    private fun <T> SupplierBBaseResponse<T>.requireSuccess(endpoint: String): SupplierBBaseResponse<T> {
+    private fun <T> SupplierBBaseResponse<T>.requireSuccessData(endpoint: String): T {
         if (resultCode != SupplierBBaseResponse.SUCCESS_CODE) {
             // resultCode 는 HTTP 상태를 미러링한다 (E503 → 503) — 숫자로 변환해 공통 분류 규칙을 그대로 쓴다.
             // 미러 형식이 아닌 알 수 없는 코드는 보수적으로 재시도 제외.
@@ -78,7 +80,7 @@ class SupplierBClient(
                 retryable = status != null && isRetryableStatus(status),
             )
         }
-        return this
+        return data ?: throw SupplierCallException(supplier, "$endpoint: success without data")
     }
 
     private fun SupplierBProperty.toSupplierProperty(): SupplierProperty = SupplierProperty(
