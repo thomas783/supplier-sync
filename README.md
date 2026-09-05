@@ -25,7 +25,7 @@ docker compose up -d --wait  # 로컬 MySQL 8.4 기동, 준비 완료까지 대�
 ./gradlew build              # 컴파일 + 테스트
 ./gradlew test               # 테스트만 실행
 ./gradlew :mock-supplier:bootRun  # Mock 공급사 서버 실행 (9090) — 본 앱보다 먼저 띄운다
-./gradlew bootRun            # 애플리케이션 실행 (기본 8080)
+./gradlew :bootRun                # 본 애플리케이션 실행 (8080) — 경로 없는 bootRun 은 모든 모듈의 것을 실행하므로 루트를 명시
 ```
 
 JDK 21이 필요합니다. Gradle toolchain이 컴파일 대상을, `gradle/gradle-daemon-jvm.properties`가 빌드를
