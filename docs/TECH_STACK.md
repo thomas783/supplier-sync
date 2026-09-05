@@ -80,6 +80,13 @@ SQL 방언(dialect)과 제약 동작이 실DB와 달라질 수 있다는 점을 
 `update`, 테스트 `create`). Flyway도 검토했으나 테이블 두 개 규모에는 마이그레이션 파일 관리가 얻는
 것보다 큰 과잉이라 보류했습니다 — 스키마 변경 이력이 실제로 쌓이기 시작하면 재검토합니다.
 
+### MockWebServer — 어댑터 HTTP 검증
+
+공급사 어댑터 테스트는 로컬 목 HTTP 서버(MockWebServer)로 실제 HTTP 계층을 통과해 검증합니다 —
+직렬화, 상태 코드 해석, 무응답 타임아웃은 HTTP 를 실제로 오가야 검증되는 동작이라 메서드 수준
+모킹으로는 대체되지 않습니다. 의존성이 가볍고 응답 큐잉·요청 검증이 단순하며, 버전은 Boot BOM 관리
+밖이라 명시적으로 고정합니다.
+
 ### Resilience4j — 호출 지점과의 궁합
 
 외부 호출이 WebClient의 Reactor 체인(Mono/Flux) 안에서 일어나므로, 실패 처리 도구도 그 체인에 자연스럽게
@@ -108,5 +115,3 @@ Spring Retry는 블로킹 메서드 대상 AOP라 리액티브 구간에 맞지 
 
 - **지표 수집** — Micrometer + Prometheus 노출 여부와 계측 설계는 관측성 작업 때.
 - **API 문서화** — SpringDoc/Swagger 도입 여부는 웹 API 작업 때.
-- **테스트 도구** — 외부 HTTP 검증(MockWebServer 등)은 테스트 작성 때. MySQL 구동 방식은 Testcontainers로
-  확정했습니다(위 MySQL 절).
