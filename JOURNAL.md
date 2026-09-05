@@ -600,6 +600,11 @@ config`, 의존 방향은 `web → search·sync → (supplier 포트 / domain)`�
   중단했고, 지금은 러너가 강제로 Node 24에서 돌려주지만 유예가 끝나면 실패한다. 빌드 자체(Java/Gradle)와
   무관한 액션 런타임 문제라, 열려 있는 CI PR에서 바로 해결 — 최신 메이저(checkout v7, setup-java v6,
   setup-gradle v6)로 올리고 CI 재실행 통과 확인.
+- **Gradle 캐시 증분 활용(사용자 요청)**: 로그로 확인한 결과 setup-gradle이 캐시를 기본으로 관리하고
+  있었다(`cache-provider: enhanced`). 구조가 곧 증분이다 — main 실행이 캐시를 저장·갱신하고 브랜치 실행은
+  읽기 전용으로 재사용하므로, 의존성이 바뀐 PR이 머지되면 다음 main 실행이 캐시를 새로 쓴다. 브랜치마다
+  쓰기를 허용하면 캐시 한도(10GB)에서 서로를 밀어내는 낭비가 생겨 기본값이 권장 구조다. 별도 설정 없이
+  성립하므로 워크플로에 의도를 주석으로만 명시했다.
 
 ### 13:50 · PR 머지 정책 — merge commit (PR #1)
 
