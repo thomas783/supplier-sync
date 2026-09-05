@@ -15,8 +15,8 @@
 교집합만이 공급사 수에 대해 확장 가능한 원칙입니다.
 
 다만 교집합은 출발점이지 감옥이 아닙니다 — **필요가 생기면 공통 모델을 명시적으로 변경**하며, 그 변경은
-원칙의 예외임을 문서에 남깁니다. 현재 예외는 하나이며(아래 요금의 `nightlyRates`), 그 경위도 함께
-적었습니다.
+원칙의 예외임을 문서에 남깁니다. 현재 예외는 없습니다 — 한 차례 도입했던 예외(일자별 실측 금액)는
+소비자 분기 부담을 근거로 되돌렸으며, 그 경위는 아래 "잃는 것" 목록과 JOURNAL 에 있습니다.
 
 ## 상품 단위 — 숙소 × 객실 타입
 
@@ -27,20 +27,25 @@
 ```mermaid
 classDiagram
     class StayProduct {
-        +Long propertyId
-        +String propertyName
-        +Long roomTypeId
-        +String roomTypeName
-        +int maxOccupancy
+        +Property property
+        +RoomType roomType
         +Boolean breakfastIncluded
         +Availability availability
         +Supplier supplier
         +Price price
     }
+    class Property {
+        +Long id   "내부 대리키"
+        +String name
+    }
+    class RoomType {
+        +Long id   "내부 대리키"
+        +String name
+        +int maxOccupancy
+    }
     class Price {
         +Long totalAmount        "세금 포함 총액 — 정산 기준"
         +Long averageNightlyAmount "평균 1박가 — 총액÷박수, 내림"
-        +NightlyRate[] nightlyRates "일자별 실측 — 제공 공급사만"
         +String currency
     }
     class Availability {
@@ -49,6 +54,8 @@ classDiagram
         SOLD_OUT (확정 매진)
         UNDETERMINED (미확정)
     }
+    StayProduct --> Property
+    StayProduct --> RoomType
     StayProduct --> Price
     StayProduct --> Availability
 ```
@@ -56,6 +63,22 @@ classDiagram
 `StayProduct`는 숙박 상품의 단위로, 검색 때마다 어댑터 응답을 정규화해 만드는 런타임 모델이며
 영속화하지 않습니다 — 특정 검색 조건(날짜·인원)에서의 요금과 가용성이 붙은 판매 상품 하나가 검색 결과의
 항목입니다. 저장하는 것은 식별자 매핑뿐입니다(ERD 문서 참고).
+
+## 표준 모델의 네 단위 — 숙소·객실·요금·재고
+
+네 개념은 각각 독립된 비영속 모델로 정의되고, `StayProduct`가 이들을 조합해 검색 결과 항목이 됩니다.
+
+| 개념 | 단위 정의 | 비영속 모델 | 영속 표현 (ERD) |
+|---|---|---|---|
+| 숙소 | 공급사 안에서만 유일한 코드에 내부 대리키를 부여한 단위 | `Property` (id, name) | `property` 매핑 테이블 |
+| 객실 | 개별 물리 객실이 아니라 **객실 타입** — 숙소 안에서만 유일 | `RoomType` (id, name, maxOccupancy) | `room_type` 매핑 테이블 |
+| 요금 | 숙박 기간 전체의 **세금 포함 총액** 기준 묶음 | `Price` | 저장하지 않음 |
+| 재고 | 날짜별 잔여 수를 전 기간 병목으로 판정한 결과 | `Availability` 3상태 | 저장하지 않음 |
+
+숙소·객실의 비영속 모델은 매핑 엔티티의 **투영**입니다 — 검색 결과에 필요한 것은 내부 식별자와 표시
+속성뿐이라, 정규화가 매핑에서 이 형태로 만들어 상품에 싣습니다. 공급사 코드는 여기에 없습니다(어댑터
+경계 밖으로 나오지 않는 원칙). API 응답에서는 이 중첩 구조를 평면(`propertyId`, `propertyName`, ...)으로
+투영합니다 — 표현 계층의 변환이며 계약은 [API.md](API.md)가 기준입니다.
 
 ## 요금 — 총액이 기준, 1박가는 함께
 
@@ -77,10 +100,6 @@ A의 날짜별 net+세금은 합산하면 세금 포함 총액이 되지만, B�
 - **`averageNightlyAmount`** (항상) — 평균 1박가. 총액 ÷ 박수로 어느 공급사든 계산 가능하므로 null 없이
   채워집니다. 정수 나눗셈의 끝수는 **내림**으로 처리하며, 표시용 파생값이므로 평균×박수가 총액과 일치하지
   않을 수 있습니다.
-- **`nightlyRates[]`** — 일자별 실측 금액(날짜, 금액). **실측을 주는 공급사(A)만** 채우고 없는 공급사(B)는
-  비웁니다. 평균을 일자별로 복제해 채우는 방식은 실측이 아닌 값을 실측처럼 보이게 하므로 거부했습니다.
-  이 필드는 교집합 원칙의 **첫 명시적 예외**입니다 — 항상 존재하는 값은 평균이고 일자별은 부가 정보라는
-  위계를 두어, 예외가 소비자 분기 부담으로 번지지 않게 했습니다.
 - **`currency`** — ISO 4217 코드로 보존하되 환산하지 않습니다.
 
 조식 포함 여부(`breakfastIncluded`)는 돈이 아니라 상품의 조건이므로 `price` 안이 아닌 **`StayProduct`의
@@ -96,8 +115,9 @@ A의 날짜별 net+세금은 합산하면 세금 포함 총액이 되지만, B�
 - **세금 분리 금액** — B가 세금액을 주지 않으므로 표준에서 버립니다. "세금 별도" 표기, 세전가 비교·정렬,
   영수증식 상세 내역은 불가합니다.
 - **net 가격 정보** — 표준이 세금 포함 총액으로 통일되므로 세전/세후 구분 자체가 사라집니다.
-- **날짜별 단가**는 원래 버릴 목록이었으나, 위 `nightlyRates` 예외로 **실측 제공 공급사에 한해 보존**하는
-  것으로 조정됐습니다. 실측이 없는 공급사의 일자별 변동 정보는 여전히 존재하지 않습니다.
+- **날짜별 단가·실측 금액** — 한때 실측 제공 공급사(A)에 한해 보존하는 예외를 뒀으나, 한쪽만 채워지는
+  필드는 소비자 분기를 낳는다는 원칙 그대로의 이유로 되돌려 버립니다. 원본은 어댑터 경계 안(A 응답)에
+  있으므로, 일자별 요금 표시가 실제로 필요해지는 시점에 명시적 진화로 복원합니다.
 
 이 손실이 문제되는 시점(세전 정산, 일할 환불 계산 등)의 대비책은 두 가지입니다 — 공급사 원본 응답을 별도로
 보관하거나, 그때 원칙을 명시적으로 변경하는 것. 어느 쪽도 지금 결정을 비가역으로 만들지 않습니다.
@@ -161,10 +181,10 @@ A의 날짜별 net+세금은 합산하면 세금 포함 총액이 되지만, B�
 | 표준 용어 | 의미 | 공급사 A 원시 | 공급사 B 원시 |
 |---|---|---|---|
 | `supplier` | 공급사 — 상품의 출처이자 내부 식별자의 네임스페이스 | — | — |
-| `property` | 숙소. 엔티티 `PropertyEntity`, 테이블 `property` | hotelCode / hotelName | propertyId / propertyName |
-| `roomType` | 객실 타입(개별 물리 객실 아님). 엔티티 `RoomTypeEntity`, 테이블 `room_type` | roomTypeCode / roomTypeName | roomId / roomName |
+| `property` | 숙소. 모델 `Property`, 엔티티 `PropertyEntity`, 테이블 `property` | hotelCode / hotelName | propertyId / propertyName |
+| `roomType` | 객실 타입(개별 물리 객실 아님). 모델 `RoomType`, 엔티티 `RoomTypeEntity`, 테이블 `room_type` | roomTypeCode / roomTypeName | roomId / roomName |
 | `StayProduct` | 숙박 상품 단위 — 요금 + 가용성 + 출처가 붙은 검색 결과 항목 | — | — |
-| `price` | 요금 묶음(총액·평균 1박가·일자별 실측·통화). 조식 여부는 `StayProduct` 속성 | — | — |
+| `price` | 요금 묶음(총액·평균 1박가·통화). 조식 여부는 `StayProduct` 속성 | — | — |
 | `availability` | StayProduct의 가용성 3상태: `AVAILABLE` / `SOLD_OUT` / `UNDETERMINED` | — | — |
 
 공급사 연동의 두 조회는 고유명사 없이 서술형으로 부릅니다.

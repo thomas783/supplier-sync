@@ -49,11 +49,6 @@ GET /api/v1/stays/search?checkIn=2026-09-01&checkOut=2026-09-04&adults=2&childre
       "price": {
         "totalAmount": 429000,
         "averageNightlyAmount": 143000,
-        "nightlyRates": [
-          { "date": "2026-09-01", "amount": 132000 },
-          { "date": "2026-09-02", "amount": 165000 },
-          { "date": "2026-09-03", "amount": 132000 }
-        ],
         "currency": "KRW"
       }
     },
@@ -70,7 +65,6 @@ GET /api/v1/stays/search?checkIn=2026-09-01&checkOut=2026-09-04&adults=2&childre
       "price": {
         "totalAmount": 452000,
         "averageNightlyAmount": 150666,
-        "nightlyRates": [],
         "currency": "KRW"
       }
     }
@@ -96,7 +90,6 @@ GET /api/v1/stays/search?checkIn=2026-09-01&checkOut=2026-09-04&adults=2&childre
 | `stayProducts[].availableRooms` | 요청 기간 전체를 통으로 예약할 수 있는 객실 수. **0이면 확정 매진** |
 | `stayProducts[].price.totalAmount` | 숙박 기간 전체의 세금 포함 총액 — **정산·결제 금액의 기준** |
 | `stayProducts[].price.averageNightlyAmount` | 평균 1박가 = 총액 ÷ 박수(내림). 표시용 파생값이라 평균×박수 ≠ 총액일 수 있음 |
-| `stayProducts[].price.nightlyRates[]` | 일자별 실측 금액(날짜, 금액). 실측을 주는 공급사만 채워지고 없으면 **빈 배열** |
 | `stayProducts[].price.currency` | ISO 4217 통화 코드. 환산하지 않고 원 통화 그대로(현재 범위는 KRW) |
 | `errors[]` | 조회에 실패한 공급사와 사유. 비어 있으면 전체 성공 |
 
