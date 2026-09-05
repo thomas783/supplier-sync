@@ -21,10 +21,10 @@
 ## 빌드와 실행
 
 ```bash
-docker compose up -d  # 로컬 MySQL 8.4 기동 — 데이터는 네임드 볼륨에 유지
-./gradlew build       # 컴파일 + 테스트
-./gradlew test        # 테스트만 실행
-./gradlew bootRun     # 애플리케이션 실행 (기본 8080)
+docker compose up -d --wait  # 로컬 MySQL 8.4 기동, 준비 완료까지 대기 — 데이터는 네임드 볼륨에 유지
+./gradlew build              # 컴파일 + 테스트
+./gradlew test               # 테스트만 실행
+./gradlew bootRun            # 애플리케이션 실행 (기본 8080)
 ```
 
 JDK 21이 필요합니다. Gradle toolchain이 컴파일 대상을 21로 고정하지만 Gradle 자체를 실행하는 JVM은

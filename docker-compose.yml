@@ -10,7 +10,13 @@ services:
       MYSQL_PASSWORD: supplier
       MYSQL_ROOT_PASSWORD: root
     ports:
-      - "3306:3306"
+      - "127.0.0.1:3306:3306"  # 같은 네트워크의 다른 기기에서 접근하지 못하게 루프백에만 바인딩
+    healthcheck:
+      # 최초 기동은 initdb 로 수십 초가 걸린다 — docker compose up -d --wait 가 이 판정을 기다린다
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
     volumes:
       - mysql-data:/var/lib/mysql  # 컨테이너를 지워도 데이터 유지 — 초기화는 docker compose down -v 로만
 
