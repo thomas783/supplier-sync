@@ -1,0 +1,5 @@
+spring:
+  jpa:
+    hibernate:
+      # Testcontainers 가 매번 빈 컨테이너를 주므로 테스트는 스키마를 새로 생성한다
+      ddl-auto: create

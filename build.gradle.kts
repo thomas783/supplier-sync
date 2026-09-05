@@ -38,11 +38,15 @@ dependencies {
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
 
-    runtimeOnly("com.h2database:h2")
+    // MySQL 드라이버 — 버전은 Boot BOM 관리
+    runtimeOnly("com.mysql:mysql-connector-j")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("io.projectreactor:reactor-test")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
+    // 테스트가 MySQL 8.4 컨테이너를 스스로 구동 — @ServiceConnection 이 datasource 를 자동 구성
+    testImplementation("org.springframework.boot:spring-boot-testcontainers")
+    testImplementation("org.testcontainers:mysql")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
@@ -63,4 +67,6 @@ allOpen {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+    // 테스트 JVM 도 KST 고정 — main() 의 TimeZone.setDefault 는 @SpringBootTest 실행 경로에 없다
+    systemProperty("user.timezone", "Asia/Seoul")
 }
