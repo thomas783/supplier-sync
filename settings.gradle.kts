@@ -11,3 +11,5 @@ pluginManagement {
 
 rootProject.name = "supplier-sync"
 
+// Mock 공급사 서버 — 본 앱 아티팩트·의존성과 분리된 별도 모듈 (docs/ARCHITECTURE.md)
+include("mock-supplier")
