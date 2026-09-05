@@ -9,6 +9,8 @@ import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.JoinColumn
 import jakarta.persistence.ManyToOne
+import jakarta.persistence.PrePersist
+import jakarta.persistence.PreUpdate
 import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
 
@@ -70,4 +72,27 @@ class RoomTypeEntity(
     @Column(name = "max_occupancy", nullable = false)
     var maxOccupancy: Int = maxOccupancy
         protected set
+
+    // 상태 불변식의 단일 정의이자 영속 최후 방어선 — 계약 밖 데이터의 1차 필터는 동기화의 경계
+    // 검증(Bean Validation)이 저장 전에 끝내므로, 여기서 터진다는 것은 버그이고 트랜잭션이 죽는 게 맞다.
+    // 생성(init)·갱신(updateFrom)·저장 직전(JPA 콜백 — 우회 경로의 그물망)이 모두 이 함수를 지난다.
+    // Hibernate 의 조회 시 인스턴스화(no-arg 생성자)는 init 을 거치지 않으므로 하이드레이션에는 영향이 없다.
+    @PrePersist
+    @PreUpdate
+    fun validate() {
+        require(supplierRoomTypeCode.isNotBlank()) { "supplierRoomTypeCode must not be blank" }
+        require(roomTypeName.isNotBlank()) { "roomTypeName must not be blank" }
+        require(maxOccupancy > 0) { "maxOccupancy must be positive: $maxOccupancy" }
+    }
+
+    init {
+        validate()
+    }
+
+    /** 재동기화에서 표시 속성을 갱신한다 — 자연키(property, supplierRoomTypeCode)는 정체성이라 갱신 대상이 아니다. */
+    fun updateFrom(roomTypeName: String, maxOccupancy: Int) {
+        this.roomTypeName = roomTypeName
+        this.maxOccupancy = maxOccupancy
+        validate()
+    }
 }

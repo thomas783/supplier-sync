@@ -2,6 +2,8 @@ package com.staysync.supplier
 
 import com.staysync.domain.model.Supplier
 import io.netty.channel.ConnectTimeoutException
+import jakarta.validation.constraints.NotBlank
+import jakarta.validation.constraints.Positive
 import io.netty.handler.timeout.ReadTimeoutException
 import org.springframework.web.reactive.function.client.WebClientResponseException
 import java.time.LocalDate
@@ -15,17 +17,20 @@ import java.util.concurrent.TimeoutException
  * 내부 id 로의 치환과 가용성 판정은 정규화(검색 계층)의 몫이다.
  */
 
-/** 숙소 목록 조회 결과 (정적 콘텐츠). 요금·재고는 없다. */
+/**
+ * 숙소 목록 조회 결과 (정적 콘텐츠). 요금·재고는 없다.
+ * 애노테이션은 공급사 계약의 선언이다 — 동기화가 저장 전에 Validator 로 판정해 계약 밖 레코드를 건너뛴다.
+ */
 data class SupplierProperty(
-    val supplierPropertyCode: String,
-    val propertyName: String,
+    @field:NotBlank val supplierPropertyCode: String,
+    @field:NotBlank val propertyName: String,
     val roomTypes: List<SupplierRoomType>,
 )
 
 data class SupplierRoomType(
-    val supplierRoomTypeCode: String,
-    val roomTypeName: String,
-    val maxOccupancy: Int,
+    @field:NotBlank val supplierRoomTypeCode: String,
+    @field:NotBlank val roomTypeName: String,
+    @field:Positive val maxOccupancy: Int,
 )
 
 /**

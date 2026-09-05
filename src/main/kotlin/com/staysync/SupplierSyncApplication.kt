@@ -3,10 +3,13 @@ package com.staysync
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
 import org.springframework.data.jpa.repository.config.EnableJpaAuditing
+import org.springframework.scheduling.annotation.EnableScheduling
 import java.util.TimeZone
 
 // 감사 컬럼(created_at/updated_at)은 JPA Auditing 이 채운다 — docs/ERD.md 감사 컬럼 절
 @EnableJpaAuditing
+// 매핑 배치 동기화(PropertySyncScheduler)의 @Scheduled 활성화
+@EnableScheduling
 @SpringBootApplication
 class SupplierSyncApplication
 

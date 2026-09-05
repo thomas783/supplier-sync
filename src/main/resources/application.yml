@@ -18,6 +18,10 @@ spring:
         format_sql: true
     open-in-view: false
 
+sync:
+  # 숙소 목록은 정적 콘텐츠 — 트래픽이 적은 새벽 4시(KST) 하루 1회면 충분. 즉시 반영은 수동 트리거가 담당
+  property-cron: "0 0 4 * * *"
+
 supplier:
   # 타임아웃 근거 (docs/INTEGRATION.md): 정상 연결은 수십 ms — 1초 초과 자체가 연결 단계 장애 신호.
   # 응답 5초는 공급사 응답 분포를 모르는 시점의 관대한 출발값 — 무응답은 여기서 끊겨 부분 실패로
