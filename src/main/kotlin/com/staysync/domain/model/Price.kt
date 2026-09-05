@@ -26,7 +26,9 @@ import java.time.LocalDate
  * @property nightlyRates 일자별 실측 금액 — 실측을 주는 공급사만, 없으면 빈 리스트
  * @property currency ISO 4217 통화 코드. 환산하지 않고 보존한다.
  */
-data class Price(
+// private 생성자 + copy() 가시성 일치로 "평균 = 총액 ÷ 박수(내림)" 불변식의 우회 경로를 막는다 — 생성은 of()로만
+@ConsistentCopyVisibility
+data class Price private constructor(
     val totalAmount: Long,
     val averageNightlyAmount: Long,
     val nightlyRates: List<NightlyRate>,
