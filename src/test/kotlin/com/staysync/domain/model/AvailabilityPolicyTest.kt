@@ -35,6 +35,7 @@ class AvailabilityPolicyTest {
             remainingByDate = mapOf(d1 to 2, d2 to 0, d3 to 4),
         )
         assertEquals(Availability.SoldOut, result)
+        assertEquals(0, (result as Availability.Determined).availableRooms) // 확정 매진은 "확실한 0"
     }
 
     @Test
