@@ -47,6 +47,8 @@ dependencies {
     // 테스트가 MySQL 8.4 컨테이너를 스스로 구동 — @ServiceConnection 이 datasource 를 자동 구성
     testImplementation("org.springframework.boot:spring-boot-testcontainers")
     testImplementation("org.testcontainers:mysql")
+    // 어댑터 HTTP 계약 검증용 목 서버 — 버전은 Boot BOM 관리 밖이라 명시 고정
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 

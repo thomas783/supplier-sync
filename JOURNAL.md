@@ -786,3 +786,80 @@ MySQL 8.4(Testcontainers)에서 UNIQUE 제약 동작·감사 컬럼 채움·자�
   (애플리케이션 클래스)에 있어 슬라이스에서도 적용된다.
 
 엔티티 필드 검증(blank·양수) 부재 지적은 리뷰 권고대로 upsert 로직이 붙는 동기화 라운드로 이월한다.
+
+### 21:00 · 공급사 어댑터 라운드 — 포트·중간 타입·A/B 클라이언트 (PR #6)
+
+문서(ARCHITECTURE·INTEGRATION·용어집)에서 확정한 연동 경계를 구현하는 라운드다. 포트
+`SupplierClient`(숙소 목록은 블로킹, 재고·요금은 Mono — 검색 계층의 병렬 팬아웃용), 중간 표준
+타입(`SupplierProperty`/`SupplierRoomType`/`SupplierStayProduct`/`StayProductQuery`), 실패 통일
+계약(`SupplierCallException` + retryable 분류), 공급사별 WebClient 구성과 A/B 어댑터로 구성된다.
+원시 DTO 는 supplier/a·supplier/b 패키지에 격리되어 밖으로 새어 나가지 않는다.
+
+구현하며 확정한 세부 결정들:
+
+- **포트 메서드·쿼리 이름**: 재고·요금 조회는 `fetchStayProducts`/`StayProductQuery`. 용어집에서
+  `availability`는 가용성 3상태의 표준어라, A 원시 엔드포인트명과 겹치는 이름을 포트 수준에 두지 않는다.
+- **중간 타입의 일자별 실측 보존**: `SupplierStayProduct.nightlyAmountsByDate` — A 는 일자별
+  gross(단가+세금)를 실측으로 보존하고, B 는 평균을 복제하지 않고 빈 맵이다. 도메인 `Price.nightlyRates`
+  의 재료가 여기서 유실되지 않게 한다.
+- **타임아웃 설정**: 연결 1초/응답 5초(INTEGRATION 결정)를 `SupplierProperties`로 바인딩. 값은
+  application.yml 의 supplier 절이 **유일한 원천**이다 — 코드 기본값을 두지 않아 설정 누락이 기동 시점
+  바인딩 실패로 드러난다(사용자 지적: yml 에 값이 없는 문제 → 단일 원천화로 해소).
+- **MockWebServer 채택**: TECH_STACK 미결이던 외부 HTTP 검증 도구를 확정했다. 직렬화·상태 코드
+  해석·무응답 타임아웃은 HTTP 를 실제로 오가야 검증되는 동작이다. 버전은 BOM 관리 밖이라 명시
+  고정(4.12.0). 어댑터 테스트 12건이 실제 HTTP 왕복으로 파싱·요청 형식·실패 변환·재시도 분류를 검증한다.
+
+### 21:10 · 어댑터 코드 리뷰 — 사용자 주도 다듬기 (PR #6)
+
+사용자가 코드를 직접 읽으며 지적·제안하고 AI 가 반영하는 방식으로 어댑터를 다듬었다. 결정 순서대로:
+
+- **중간 타입과 도메인 타입의 분리 유지**: `SupplierStayProduct`와 `StayProduct`를 합칠 수 있는지
+  질문 → 두 타입은 원료(공급사 코드·재고 원료)와 제품(내부 id·판정 결과)의 관계라 유지로 결론.
+  합치면 어댑터가 DB 와 도메인 판정을 알게 되어 두 단계 경계가 무너진다.
+- **`isTimeout` 위치**: 설정 클래스(WebClientConfig)에 있던 것을 실패 계약이 있는 supplier 패키지로
+  이동(사용자 지적: 설정 파일에 분류 로직은 어색하다). 인터페이스 디폴트 메서드·companion 대안을
+  검토했고 일단 톱레벨 유지.
+- **`@param:Qualifier`**: Kotlin 이 생성자 프로퍼티 애노테이션의 사용 지점 대상을 명시하라고 경고
+  (기본 규칙이 향후 변경 예정) → 명시로 고정.
+- **응답 봉투 제네릭 공통화(사용자 제안·구현)**: A 의 모든 응답이 `{items: [...]}` 봉투임을
+  `SupplierABaseResponse<T>`로 표현. B 도 대칭으로 `SupplierBBaseResponse<T>`(resultCode/message/data,
+  SUCCESS_CODE 는 companion). 원시 DTO 접두는 `SupplierA`/`SupplierB`로 통일(사용자 결정).
+- **변환 함수 추출(사용자 제안)**: 숙소 목록 변환도 `toSupplierProperty()` 확장으로 빼서
+  `toStayProduct()`와 대칭. 중첩 생성은 개행 + 네임드 인자로 매핑 관계가 드러나게(사용자 지적).
+- **오류 메시지의 endpoint 특정(사용자 제안)**: 작업명 별칭("hotels") 대신 엔드포인트 경로 상수를
+  `uri()`와 오류 변환이 공유 — 지어낸 어휘가 사라지고 실패 지점이 경로로 특정된다.
+- **실패 변환 단일화**: 동기 경로(try/catch)와 리액티브 경로(onErrorMap)가 같은 `toSupplierError`를
+  쓰도록 통일하고, A 의 "본문 없는 200 → 빈 목록" 처리도 B 처럼 계약 위반 실패로 정렬. 이후
+  `toSupplierError` 자체를 supplier 패키지 공통으로 추출(사용자 지적: A/B 중복) — 전송 계층 실패
+  분류는 공급사 불변 규칙이다.
+- **재시도 판단 지점 단일화(사용자 제안)**: B 의 resultCode 가 HTTP 상태의 미러(E503↔503)임을 이용,
+  표현만 숫자로 변환하고 판단은 공통 `isRetryableStatus`(5xx·429) 하나로. B 전용 재시도 테이블 삭제.
+  가짜 HTTP 예외를 만드는 방식은 전송 사실 왜곡이라 피하고 메시지는 resultCode 원형 유지.
+- **runCatching 검토 후 배제**: `runCatching`은 Error 계열까지 삼켜 JVM 치명 상태가 "공급사 실패"로
+  둔갑한다. try/catch(Exception) 유지(사용자 결정).
+
+전체 테스트 32건 통과 확인(모델 13, 어댑터 12, 영속화 6, 컨텍스트 1). Testcontainers 가 요구하는
+로컬 Docker 데몬 최소 버전(25 이상)은 README 에 명시했다.
+
+### 21:43 · 자동 리뷰 지적 반영 (PR #6)
+
+리뷰가 실질 지적 4건을 남겼고, 전부 반영했다. 하나는 코드가 아니라 문서를 고치는 방향으로 결정됐다.
+
+- **타임아웃 재시도 — 문서를 코드에 맞춤(사용자 결정)**: 코드는 무응답 타임아웃을 `retryable = true`로
+  분류하는데 INTEGRATION 의 재시도 초안은 "타임아웃 재시도 제외"여서 상충한다는 지적. 사용자가
+  **타임아웃도 재시도 대상**으로 정책을 바꾸기로 결정 — 일시 혼잡에서 회복할 기회를 버리지 않되, 비용의
+  상한은 시도 횟수 제한(1회)과 서킷 브레이커가 만든다. INTEGRATION·DESIGN_DECISIONS 의 초안을 갱신했다.
+- **`taxIncluded` 미사용**: 스펙 확인 결과 이 필드는 **계약상 항상 true**(세금 금액 없이 포함 사실만
+  알려줌)다. `totalPrice`를 검증 없이 gross 로 신뢰하는 근거가 이 계약임을 DTO 주석으로 남겼다.
+- **연결 타임아웃 미분류**: Netty 의 `ConnectTimeoutException`은 `TimeoutException`이 아니라
+  ConnectException 계열이라 무응답 분기를 타지 못한다는 지적(리뷰어의 추측이 맞았다). `isTimeout`에
+  추가해 연결·응답 타임아웃이 같은 "무응답" 계열로 분류되게 했다.
+- **계약 위반 분기의 A/B 비대칭과 테스트 공백**: B 가 "성공 코드 + `data: null`"을 조용히 빈 리스트로
+  삼키던 것을 A 의 "본문 없는 200"과 같은 계약 위반 실패로 통일했다(`requireSuccessData`) — 정상 빈
+  결과는 data 안의 빈 items 로 오므로, 삼키면 깨진 응답과 진짜 빈 결과를 구분할 수 없다. 양쪽 분기에
+  테스트를 추가했다(어댑터 테스트 12 → 14건).
+
+2차 리뷰는 반영 4건을 전부 확인하고 "머지를 막을 사유 없음"으로 결론지으며 경미 2건을 남겼고, 이것도
+반영했다: E 접두 없는 숫자 resultCode 가 미러 파싱을 우회하던 것을 `startsWith("E")` 확인으로 막았고,
+연결 타임아웃 분류는 목 서버로 재현이 불안정해 함수 수준 단위 테스트(`SupplierErrorClassificationTest`
+3건)로 회귀를 막는다는 근거를 테스트 KDoc 에 남겼다.
