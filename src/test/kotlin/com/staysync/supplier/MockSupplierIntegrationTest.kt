@@ -12,6 +12,7 @@ import org.springframework.boot.web.servlet.context.ServletWebServerApplicationC
 import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.http.client.reactive.ReactorClientHttpConnector
 import org.springframework.web.reactive.function.client.WebClient
+import reactor.core.publisher.Mono
 import reactor.netty.http.client.HttpClient
 import java.time.Duration
 import java.time.LocalDate
@@ -58,6 +59,22 @@ class MockSupplierIntegrationTest {
         assertEquals(452000, product.grossTotalAmount)
         assertEquals(emptyMap<LocalDate, Long>(), product.nightlyAmountsByDate) // B 는 실측 없음
     }
+
+    @Test
+    fun `모드 전환 - 알 수 없는 모드는 400 으로 거부된다`() {
+        assertEquals(400, postModeStatus("/control/a/mode?value=oops"))
+    }
+
+    @Test
+    fun `모드 전환 - 알 수 없는 공급사는 400 으로 거부된다`() {
+        assertEquals(400, postModeStatus("/control/aa/mode?value=error"))
+    }
+
+    // 오타가 조용히 normal 로 동작하는 것을 막는 가드의 회귀 방지 (Mock 컨트롤러의 화이트리스트 검증)
+    private fun postModeStatus(uri: String): Int = webClient().post()
+        .uri(uri)
+        .exchangeToMono { response -> Mono.just(response.statusCode().value()) }
+        .block()!!
 
     private fun webClient(): WebClient = WebClient.builder()
         .baseUrl("http://localhost:$mockPort")
