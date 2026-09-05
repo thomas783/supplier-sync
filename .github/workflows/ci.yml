@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # Gradle 캐시(래퍼·의존성)는 이 액션이 증분으로 관리한다 — main 실행이 저장·갱신하고
+      # 브랜치 실행은 읽기 전용으로 재사용한다. 의존성 변경은 머지 후 main 실행이 캐시에 반영.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Build & test
+        run: ./gradlew build --no-daemon
