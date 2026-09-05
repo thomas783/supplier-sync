@@ -73,8 +73,8 @@ class SupplierBClient(
     private fun <T> SupplierBBaseResponse<T>.requireSuccessData(endpoint: String): T {
         if (resultCode != SupplierBBaseResponse.SUCCESS_CODE) {
             // resultCode 는 HTTP 상태를 미러링한다 (E503 → 503) — 숫자로 변환해 공통 분류 규칙을 그대로 쓴다.
-            // 미러 형식이 아닌 알 수 없는 코드는 보수적으로 재시도 제외.
-            val status = resultCode.removePrefix("E").toIntOrNull()
+            // E 접두 + 숫자의 미러 형식이 아닌 알 수 없는 코드는 보수적으로 재시도 제외.
+            val status = resultCode.takeIf { it.startsWith("E") }?.removePrefix("E")?.toIntOrNull()
             throw SupplierCallException(
                 supplier, "$endpoint resultCode=$resultCode",
                 retryable = status != null && isRetryableStatus(status),

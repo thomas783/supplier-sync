@@ -89,7 +89,6 @@ class SupplierAClient(
         )
     }
 
-
     companion object {
         private const val HOTELS_ENDPOINT = "/a/v1/hotels"
         private const val AVAILABILITY_ENDPOINT = "/a/v1/availability"
