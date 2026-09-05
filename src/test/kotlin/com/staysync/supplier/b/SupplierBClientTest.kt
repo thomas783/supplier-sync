@@ -75,7 +75,7 @@ class SupplierBClientTest {
     }
 
     @Test
-    fun `재고 요금 - totalPrice 를 gross 총액으로 담고 일자별 실측은 비운다`() {
+    fun `재고 요금 - totalPrice 를 gross 총액으로 그대로 담는다`() {
         enqueueJson(MockSupplierResponses.B_SEARCH)
 
         val product = client.fetchStayProducts(query).block()!!.single()
@@ -83,8 +83,6 @@ class SupplierBClientTest {
         assertEquals(452000, product.grossTotalAmount)
         assertEquals("KRW", product.currency)
         assertEquals(true, product.breakfastIncluded)
-        // B 는 일자별 실측을 주지 않는다 — 평균을 복제해 채우지 않고 빈 맵으로 둔다
-        assertEquals(emptyMap<LocalDate, Long>(), product.nightlyAmountsByDate)
         assertEquals(
             mapOf(
                 LocalDate.of(2026, 9, 1) to 3,

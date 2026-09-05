@@ -18,8 +18,7 @@ import java.time.format.DateTimeFormatter
 /**
  * Supplier A 어댑터.
  * - 실패 판정: HTTP 4xx/5xx → [SupplierCallException]. 5xx·429 는 재시도 가능으로 분류.
- * - 요금 변환: 날짜별 (nightlyRate + taxAmount) 를 합산해 gross 총액으로. 일자별 gross 는
- *   실측이므로 nightlyAmountsByDate 에 보존한다.
+ * - 요금 변환: 날짜별 (nightlyRate + taxAmount) 를 합산해 gross 총액으로.
  */
 @Component
 class SupplierAClient(
@@ -72,22 +71,18 @@ class SupplierAClient(
         },
     )
 
-    private fun SupplierAAvailabilityItem.toStayProduct(): SupplierStayProduct {
-        // 세금 별도(net) → gross 총액 = Σ(nightlyRate + taxAmount). 일자별 gross 는 실측으로 보존.
-        val nightlyGrossByDate = dailyRates.associate { it.date to (it.nightlyRate + it.taxAmount) }
-        return SupplierStayProduct(
-            supplierPropertyCode = hotelCode,
-            propertyName = hotelName,
-            supplierRoomTypeCode = roomTypeCode,
-            roomTypeName = roomTypeName,
-            maxOccupancy = maxOccupancy,
-            breakfastIncluded = breakfastIncluded,
-            currency = currency,
-            grossTotalAmount = nightlyGrossByDate.values.sum(),
-            nightlyAmountsByDate = nightlyGrossByDate,
-            remainingByDate = dailyRates.associate { it.date to it.remainingRooms },
-        )
-    }
+    private fun SupplierAAvailabilityItem.toStayProduct(): SupplierStayProduct = SupplierStayProduct(
+        supplierPropertyCode = hotelCode,
+        propertyName = hotelName,
+        supplierRoomTypeCode = roomTypeCode,
+        roomTypeName = roomTypeName,
+        maxOccupancy = maxOccupancy,
+        breakfastIncluded = breakfastIncluded,
+        currency = currency,
+        // 세금 별도(net) → gross 총액 = Σ(nightlyRate + taxAmount)
+        grossTotalAmount = dailyRates.sumOf { it.nightlyRate + it.taxAmount },
+        remainingByDate = dailyRates.associate { it.date to it.remainingRooms },
+    )
 
     companion object {
         private const val HOTELS_ENDPOINT = "/a/v1/hotels"

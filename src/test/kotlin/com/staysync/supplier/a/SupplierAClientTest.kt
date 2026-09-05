@@ -70,7 +70,7 @@ class SupplierAClientTest {
     }
 
     @Test
-    fun `재고 요금 - net+tax 를 합산해 gross 총액으로 변환하고 일자별 실측을 보존한다`() {
+    fun `재고 요금 - net+tax 를 합산해 gross 총액으로 변환한다`() {
         enqueueJson(MockSupplierResponses.A_AVAILABILITY)
 
         val products = client.fetchStayProducts(query).block()!!
@@ -80,15 +80,6 @@ class SupplierAClientTest {
         assertEquals(429000, riverside.grossTotalAmount)
         assertEquals("KRW", riverside.currency)
         assertEquals(false, riverside.breakfastIncluded)
-        // 일자별 실측은 gross(단가+세금)로 보존된다
-        assertEquals(
-            mapOf(
-                LocalDate.of(2026, 9, 1) to 132000L,
-                LocalDate.of(2026, 9, 2) to 165000L,
-                LocalDate.of(2026, 9, 3) to 132000L,
-            ),
-            riverside.nightlyAmountsByDate,
-        )
         assertEquals(
             mapOf(
                 LocalDate.of(2026, 9, 1) to 3,

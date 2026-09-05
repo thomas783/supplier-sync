@@ -20,8 +20,7 @@ import java.time.format.DateTimeFormatter
  * Supplier B 어댑터.
  * - 실패 판정 통일: HTTP 는 항상 200 이므로, 본문 resultCode 가 "0000"이 아니면 실패로 간주하고
  *   [SupplierCallException] 을 던진다. 이렇게 A 의 4xx/5xx 와 동일하게 다뤄진다.
- * - 요금 변환: totalPrice 가 이미 gross 총액이라 그대로 사용. 일자별 실측 금액은 주지 않으므로
- *   nightlyAmountsByDate 는 빈 맵 — 평균을 복제해 채우지 않는다 (docs/DOMAIN_MODEL.md).
+ * - 요금 변환: totalPrice 가 이미 gross 총액이라 그대로 사용.
  */
 @Component
 class SupplierBClient(
@@ -104,7 +103,6 @@ class SupplierBClient(
         breakfastIncluded = breakfastIncluded,
         currency = currency,
         grossTotalAmount = totalPrice,
-        nightlyAmountsByDate = emptyMap(),
         remainingByDate = inventory.associate { it.date to it.remainingRooms },
     )
 

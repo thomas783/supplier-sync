@@ -1,7 +1,5 @@
 package com.staysync.domain.model
 
-import java.time.LocalDate
-
 /**
  * 표준 요금 묶음.
  *
@@ -12,9 +10,9 @@ import java.time.LocalDate
  * 정산·결제 금액의 기준은 어디까지나 [totalAmount]다. [averageNightlyAmount]는 "하루에 얼마인가"를
  * 위한 표시용 파생값(총액 ÷ 박수, 내림)이라 평균 × 박수가 총액과 일치하지 않을 수 있다.
  *
- * [nightlyRates]는 교집합 원칙의 첫 명시적 예외다 — 일자별 실측을 주는 공급사(A)만 채우고 없는
- * 공급사(B)는 빈 리스트로 둔다. 평균을 일자별로 복제해 채우는 방식은 실측이 아닌 값을 실측처럼 보이게
- * 하므로 거부했다. 항상 존재하는 값은 평균이고 일자별은 부가 정보라는 위계다.
+ * 일자별 실측 금액은 표준에 담지 않는다 — 실측을 주는 공급사(A)에서만 채워지는 비대칭 필드는 소비자
+ * 분기를 낳으므로 교집합 원칙에 따라 버렸고, 필요해지는 시점에 어댑터 경계에서 복원할 수 있다
+ * (docs/DOMAIN_MODEL.md 의 "잃는 것" 목록).
  *
  * 조식 포함 여부는 돈이 아니라 상품의 조건이므로 여기가 아닌 [StayProduct]의 속성이다.
  *
@@ -23,7 +21,6 @@ import java.time.LocalDate
  *
  * @property totalAmount 세금 포함 총액 — 정산 기준
  * @property averageNightlyAmount 평균 1박가 — 총액 ÷ 박수, 내림
- * @property nightlyRates 일자별 실측 금액 — 실측을 주는 공급사만, 없으면 빈 리스트
  * @property currency ISO 4217 통화 코드. 환산하지 않고 보존한다.
  */
 // private 생성자 + copy() 가시성 일치로 "평균 = 총액 ÷ 박수(내림)" 불변식의 우회 경로를 막는다 — 생성은 of()로만
@@ -31,7 +28,6 @@ import java.time.LocalDate
 data class Price private constructor(
     val totalAmount: Long,
     val averageNightlyAmount: Long,
-    val nightlyRates: List<NightlyRate>,
     val currency: String,
 ) {
     init {
@@ -42,24 +38,13 @@ data class Price private constructor(
 
     companion object {
         /** 총액과 박수로 평균 1박가(내림)를 계산해 생성한다. */
-        fun of(totalAmount: Long, nights: Int, nightlyRates: List<NightlyRate>, currency: String): Price {
+        fun of(totalAmount: Long, nights: Int, currency: String): Price {
             require(nights > 0) { "nights must be positive: $nights" }
             return Price(
                 totalAmount = totalAmount,
                 averageNightlyAmount = totalAmount / nights,
-                nightlyRates = nightlyRates,
                 currency = currency,
             )
         }
-    }
-}
-
-/** 일자별 실측 금액 항목. */
-data class NightlyRate(
-    val date: LocalDate,
-    val amount: Long,
-) {
-    init {
-        require(amount >= 0) { "amount must be non-negative: $amount" }
     }
 }
