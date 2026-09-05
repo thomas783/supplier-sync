@@ -718,3 +718,14 @@ PR #2에서 넣은 자동 리뷰가 이 PR에서 처음 실제로 돌았다. 첫
 
 `ddl-auto: update`의 드리프트 한계와 `@EnableJpaAuditing` 검증 예고는 이미 문서·계획에 있는 내용의
 확인이라 추가 조치 없음.
+
+### 18:52 · Gradle 실행 JVM을 프로젝트 파일로 고정 (PR #4)
+
+빌드마다 `JAVA_HOME`을 21로 지정해 실행하는 불편(사용자 지적)에서 출발했다. 셸 기본 java 는 25인데,
+Gradle 데몬이 25에서 뜨면 Kotlin 컴파일러가 버전 문자열을 읽지 못하고 죽는 문제가 프로젝트 초기부터
+있었다. `./gradlew updateDaemonJvm --jvm-version=21`로 `gradle/gradle-daemon-jvm.properties`
+(`toolchainVersion=21`)를 생성해 해결했다 — toolchain 이 컴파일 대상을 고정하듯, 이 파일은 빌드를
+수행하는 **데몬 JVM**을 21로 선언한다. 설치된 JDK 중 21을 자동 탐지하므로 셸·머신·CI 어디서든 동일하게
+동작하고, 문제의 원인 지점(데몬)이 저장소에 커밋되는 파일로 고정된다. wrapper 클라이언트는 여전히 셸
+기본 java 로 떠서 무해한 네이티브 접근 경고를 출력하지만 빌드와 무관하다. 검증: `JAVA_HOME` 지정 없이
+컴파일 통과.

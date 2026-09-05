@@ -27,9 +27,10 @@ docker compose up -d --wait  # 로컬 MySQL 8.4 기동, 준비 완료까지 대�
 ./gradlew bootRun            # 애플리케이션 실행 (기본 8080)
 ```
 
-JDK 21이 필요합니다. Gradle toolchain이 컴파일 대상을 21로 고정하지만 Gradle 자체를 실행하는 JVM은
-별개이므로, 셸의 `JAVA_HOME`도 21을 가리키게 하는 것이 안전합니다. Docker도 필요합니다 — 실행은 compose의
-MySQL을 쓰고, 테스트는 Testcontainers가 스스로 띄우는 MySQL을 씁니다(compose 기동 여부와 무관).
+JDK 21이 필요합니다. Gradle toolchain이 컴파일 대상을, `gradle/gradle-daemon-jvm.properties`가 빌드를
+수행하는 데몬 JVM을 각각 21로 고정하므로, 셸의 기본 java가 다른 버전이어도 `./gradlew`는 그대로
+동작합니다. Docker도 필요합니다 — 실행은 compose의 MySQL을 쓰고, 테스트는 Testcontainers가 스스로 띄우는
+MySQL을 씁니다(compose 기동 여부와 무관).
 
 > 현재 저장소는 설계 라운드를 마치고 구현을 단계적으로 진행하는 중입니다. 설계 결정은 전부 문서화되어
 > 있으며, 구현은 브랜치와 PR 단위로 쌓아 과정이 커밋 히스토리에 드러나게 합니다. 진행 상황과 의사결정
