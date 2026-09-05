@@ -729,3 +729,60 @@ Gradle 데몬이 25에서 뜨면 Kotlin 컴파일러가 버전 문자열을 읽�
 동작하고, 문제의 원인 지점(데몬)이 저장소에 커밋되는 파일로 고정된다. wrapper 클라이언트는 여전히 셸
 기본 java 로 떠서 무해한 네이티브 접근 경고를 출력하지만 빌드와 무관하다. 검증: `JAVA_HOME` 지정 없이
 컴파일 통과.
+
+### 18:59 · 도메인 모델 라운드 — 구현과 엔티티 스타일 (PR #5)
+
+설계 문서(DOMAIN_MODEL·ERD·용어집)에서 확정한 결정들을 도메인 계층 코드로 구현하는 라운드다. 모델,
+엔티티, 리포지토리와 테스트를 함께 작성했다.
+
+- **요금**: `Price`(총액 + 평균 1박가 + 일자별 실측 + 통화)와 `NightlyRate`(날짜+금액).
+  `Price.of(totalAmount, nights, ...)`가 내림 나눗셈으로 평균을 계산하고, 실측이 없는 공급사는 빈
+  리스트다. 조식 여부는 결정대로 `StayProduct`의 속성이다.
+- **가용성**: `Availability` sealed 3상태(Available(잔여 n)/SoldOut/Undetermined)와
+  `AvailabilityPolicy.judge`. "확실한 0(매진)"과 "모르는 0(미확정)"의 구분이 타입에 드러나고, 누락일이
+  있으면 매진 단정도 하지 않고 Undetermined 다.
+- **감사**: JPA Auditing(`@CreatedDate`/`@LastModifiedDate`) 기반 `BaseTimeEntity`와
+  `@EnableJpaAuditing` — 예고대로 감사할 엔티티가 들어오는 이 라운드에서 도입했다(기능보다 앞서가지
+  않기).
+- **제약 이름 명시**(`uk_property_supplier_code` 등): ERD의 제약 이름과 Hibernate 생성 이름이 어긋나지
+  않도록 `@Table(uniqueConstraints)`/`@JoinColumn(foreignKey)`로 명시 — PR #3 리뷰의 예고 반영.
+
+**judge 리팩토링(사용자 주도)**: 사용자가 명령형 루프를 선언적으로 재작성하는 과정에서, 최소값을 맵
+전체에서 구하면 요청 기간 밖 날짜가 판정을 오염시키는 범위 버그를 AI가 지적했다(기간 밖 날짜의 0이
+매진 오판을 만든다). 최종형은 `stayDates.minOf { remainingByDate[it] ?: return Undetermined }` 한 줄로
+누락 검사와 병목 계산을 합쳤고, 변수명은 계산 방식(min)이 아니라 업무 의미를 담은 `bookableRooms`로
+정했다(사용자 선택). 재발 방지 테스트("기간 밖 날짜가 섞여도 판정에 영향 없음")를 추가했다.
+
+**감사 컬럼 정밀도(결정)**: AI는 Hibernate 기본 `datetime(6)` 전환(저장 값 = 메모리 값 일치)을
+추천했으나, **사용자가 ERD의 초 단위 결정 유지를 선택** — `columnDefinition = "datetime"`으로 고정하고
+KDoc·ERD·구현이 일치함을 확인했다.
+
+**엔티티 스타일(결정)**: 기존에 운영하던 코드베이스의 엔티티 스타일(전 필드 `var + protected set`,
+생성자는 일반 파라미터)과 공개 자료 두 건 — [스포카 기술 블로그의 Kotlin JPA Entity
+글](https://spoqa.github.io/2022/08/16/kotlin-jpa-entity.html), [위키독스의 Kotlin null 안전성
+챕터](https://wikidocs.net/298257) — 을 검토했다. AI는 선별 적용(정체성 필드는 `val` 유지, 갱신 가능 필드만
+`protected set`)을 제안했으나, **사용자가 전 필드 통일을 선택**했다: 생성자는 일반 파라미터로 받고
+본문에서 `var + protected set` 선언, 변경은 의도가 명시된 도메인 메서드로만 연다(갱신 메서드는 호출자가
+생기는 동기화 라운드에서). 검토의 부수 확인 두 가지 — 위키독스 글의 lateinit/기본값 딜레마는 no-arg
+플러그인이 있는 우리 구성에서 성립하지 않고(글의 예시 코드에는 기술적 오류도 있다), 스포카 글의 ULID
+PK + `Persistable` 구현은 ERD에서 기각한 결정과 충돌해 채택하지 않았다(id는 `Long = 0`으로 nullable 을
+피하면서 Spring Data 신규 판정도 동작한다). 엔티티명은 **`PropertyEntity`/`RoomTypeEntity`로
+확정**(사용자)하고 용어집의 엔티티 표기를 갱신했다.
+
+**테스트**: AvailabilityPolicyTest 6건, PriceTest 7건, MappingPersistenceTest 6건. 영속화 테스트는 실제
+MySQL 8.4(Testcontainers)에서 UNIQUE 제약 동작·감사 컬럼 채움·자연키 조회를 검증한다.
+
+### 19:26 · 자동 리뷰 지적 반영 (PR #5)
+
+리뷰 결론은 차단급 문제 없음. 실행 가능한 지적 두 건을 수용해 반영했다.
+
+- **`Price` 생성 경로 봉인**: "평균 = 총액 ÷ 박수(내림)" 불변식이 `of()` 팩토리에서만 지켜지고 public
+  생성자로 우회 가능하다는 지적. 생성자를 private 으로 막고 `@ConsistentCopyVisibility`를 함께 붙였다 —
+  이것이 없으면 data class 의 `copy()`가 private 생성자를 다시 노출하는 구멍이 남는다(Kotlin 2.1).
+  컴파일 통과가 "생성자·copy 를 직접 쓰는 코드가 없다"는 확인을 겸한다.
+- **`MappingPersistenceTest`를 `@DataJpaTest` 슬라이스로**: 리포지토리 검증에 전체 컨텍스트를 띄우는
+  것은 최소 컨텍스트 원칙 위반이라는 지적. `replace = NONE`으로 슬라이스가 datasource 를 내장 DB로
+  치환하지 않고 Testcontainers 의 MySQL 을 그대로 쓰게 했다. `@EnableJpaAuditing`은 컨텍스트 루트
+  (애플리케이션 클래스)에 있어 슬라이스에서도 적용된다.
+
+엔티티 필드 검증(blank·양수) 부재 지적은 리뷰 권고대로 upsert 로직이 붙는 동기화 라운드로 이월한다.
