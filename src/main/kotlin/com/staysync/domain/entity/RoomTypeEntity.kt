@@ -73,8 +73,9 @@ class RoomTypeEntity(
     var maxOccupancy: Int = maxOccupancy
         protected set
 
-    // 상태 불변식의 유일한 정의 — 생성(init)·갱신(updateFrom)·저장 직전(JPA 콜백) 세 관문이 모두 호출한다.
-    // 아는 경로에서는 즉시 터지고, updateFrom 을 우회하는 미래의 변경 경로도 flush 직전 그물망에는 걸린다.
+    // 상태 불변식의 단일 정의이자 영속 최후 방어선 — 계약 밖 데이터의 1차 필터는 동기화의 경계
+    // 검증(Bean Validation)이 저장 전에 끝내므로, 여기서 터진다는 것은 버그이고 트랜잭션이 죽는 게 맞다.
+    // 생성(init)·갱신(updateFrom)·저장 직전(JPA 콜백 — 우회 경로의 그물망)이 모두 이 함수를 지난다.
     // Hibernate 의 조회 시 인스턴스화(no-arg 생성자)는 init 을 거치지 않으므로 하이드레이션에는 영향이 없다.
     @PrePersist
     @PreUpdate

@@ -43,19 +43,31 @@ class PropertySyncService(
         clients.map { syncSupplier(it) }
     }
 
+    // 실패를 던지지 않고 값(결과 요약)으로 변환해 들고 다니는 자리 — runCatching 이 맞는 패턴이다.
+    // 저장 단계의 어떤 실패(DB 오류 등)도 해당 공급사의 실패로 격리되어 다음 공급사 진행과
+    // "항상 리스트 응답" 계약이 유지된다. 단 Error 계열(JVM 치명 상태)은 결과로 포장하지 않는다.
     private fun syncSupplier(client: SupplierClient): SupplierSyncResult =
-        try {
+        runCatching {
             val properties = client.fetchProperties() // 네트워크 호출 — 트랜잭션 밖
-            val counts = mappingService.persistMappings(client.supplier, properties)
-            log.info(
-                "property sync ok: supplier={} properties={} roomTypes={}",
-                client.supplier, counts.properties, counts.roomTypes,
-            )
-            SupplierSyncResult(client.supplier, ok = true, properties = counts.properties, roomTypes = counts.roomTypes)
-        } catch (e: SupplierCallException) {
-            log.warn("property sync failed: supplier={} reason={}", client.supplier, e.reason)
-            SupplierSyncResult(client.supplier, ok = false, error = e.reason)
-        }
+            mappingService.persistMappings(client.supplier, properties)
+        }.fold(
+            onSuccess = { counts ->
+                log.info(
+                    "property sync ok: supplier={} properties={} roomTypes={} skipped={}",
+                    client.supplier, counts.properties, counts.roomTypes, counts.skipped,
+                )
+                SupplierSyncResult(
+                    client.supplier, ok = true,
+                    properties = counts.properties, roomTypes = counts.roomTypes, skipped = counts.skipped,
+                )
+            },
+            onFailure = { e ->
+                if (e !is Exception) throw e
+                val reason = if (e is SupplierCallException) e.reason else "sync failed: ${e.message}"
+                log.warn("property sync failed: supplier={} reason={}", client.supplier, reason)
+                SupplierSyncResult(client.supplier, ok = false, error = reason)
+            },
+        )
 }
 
 /** 공급사별 동기화 결과 요약 — 수동 트리거 응답에도 그대로 쓰인다 (docs/API.md). */
@@ -64,5 +76,6 @@ data class SupplierSyncResult(
     val ok: Boolean,
     val properties: Int = 0,
     val roomTypes: Int = 0,
+    val skipped: Int = 0,
     val error: String? = null,
 )

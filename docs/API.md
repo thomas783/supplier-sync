@@ -155,12 +155,13 @@ POST /internal/properties/sync
 ```
 
 공급사 숙소 목록을 다시 받아 내부 `property`/`room_type` 매핑을 갱신합니다. 멱등하며, 공급사별 결과 요약을
-반환합니다.
+반환합니다. 계약 밖 데이터(빈 이름 등)는 그 레코드만 건너뛰고 `skipped`로 집계합니다 — 깨진 표시를
+노출하느니 그 숙소가 검색에서 빠지는 쪽을 택한, 가용성 판정과 같은 보수 원칙입니다.
 
 ```json
 [
-  { "supplier": "A", "ok": true, "properties": 2, "roomTypes": 2, "error": null },
-  { "supplier": "B", "ok": true, "properties": 1, "roomTypes": 1, "error": null }
+  { "supplier": "A", "ok": true, "properties": 2, "roomTypes": 2, "skipped": 0, "error": null },
+  { "supplier": "B", "ok": true, "properties": 1, "roomTypes": 1, "skipped": 0, "error": null }
 ]
 ```
 

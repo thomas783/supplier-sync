@@ -10,6 +10,8 @@ import com.staysync.supplier.SupplierClient
 import com.staysync.supplier.SupplierProperty
 import com.staysync.supplier.SupplierRoomType
 import com.staysync.supplier.SupplierStayProduct
+import jakarta.validation.Validation
+import jakarta.validation.Validator
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
@@ -104,6 +106,49 @@ class PropertySyncServiceTest {
     }
 
     @Test
+    fun `깨진 레코드는 그 레코드만 건너뛰고 나머지는 저장된다`() {
+        fakeA.propertiesToReturn = listOf(
+            SupplierProperty("A-1", "정상 숙소", listOf(SupplierRoomType("R1", "디럭스", 2))),
+            SupplierProperty("A-2", " ", listOf(SupplierRoomType("R1", "이름 없는 숙소의 객실", 2))), // 빈 이름
+        )
+
+        val results = service.syncAll()
+
+        val resultA = results.single { it.supplier == Supplier.A }
+        assertTrue(resultA.ok)
+        assertEquals(1, resultA.properties)
+        assertEquals(2, resultA.skipped) // 깨진 숙소 1 + 소속 객실 1
+        assertEquals("정상 숙소", propertyRepository.findBySupplierAndSupplierPropertyCode(Supplier.A, "A-1")!!.propertyName)
+        assertEquals(null, propertyRepository.findBySupplierAndSupplierPropertyCode(Supplier.A, "A-2"))
+    }
+
+    @Test
+    fun `갱신 데이터가 깨지면 갱신을 건너뛰고 기존 값을 유지한다`() {
+        service.syncAll()
+
+        fakeA.propertiesToReturn = listOf(
+            SupplierProperty("A-1", " ", listOf(SupplierRoomType("R1", "디럭스", 2))), // 빈 이름으로 갱신 시도
+        )
+        val results = service.syncAll()
+
+        assertEquals(2, results.single { it.supplier == Supplier.A }.skipped)
+        // 어제까지 멀쩡했던 이름을 오늘의 깨진 데이터로 잃지 않는다
+        assertEquals("리버사이드", propertyRepository.findBySupplierAndSupplierPropertyCode(Supplier.A, "A-1")!!.propertyName)
+    }
+
+    @Test
+    fun `예상 밖 예외도 공급사 단위로 격리된다`() {
+        fakeB.failWith = RuntimeException("boom")
+
+        val results = service.syncAll()
+
+        val resultB = results.single { it.supplier == Supplier.B }
+        assertEquals(false, resultB.ok)
+        assertTrue(resultB.error!!.contains("sync failed"))
+        assertTrue(results.single { it.supplier == Supplier.A }.ok) // A 는 계속 진행된다
+    }
+
+    @Test
     fun `공급사 목록에서 사라진 숙소는 그대로 유지된다`() {
         service.syncAll()
 
@@ -118,6 +163,9 @@ class PropertySyncServiceTest {
     class Fakes {
         @Bean fun fakeA() = FakeSupplierClient(Supplier.A)
         @Bean fun fakeB() = FakeSupplierClient(Supplier.B)
+
+        // @DataJpaTest 슬라이스에는 Validator 자동 구성이 없다 — 본 앱에서는 Boot 가 제공
+        @Bean fun validator(): Validator = Validation.buildDefaultValidatorFactory().validator
     }
 }
 
@@ -125,7 +173,7 @@ class PropertySyncServiceTest {
 class FakeSupplierClient(
     override val supplier: Supplier,
     var propertiesToReturn: List<SupplierProperty> = emptyList(),
-    var failWith: SupplierCallException? = null,
+    var failWith: Exception? = null,
 ) : SupplierClient {
 
     override fun fetchProperties(): List<SupplierProperty> {
