@@ -11,7 +11,8 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase
+import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest
 import org.springframework.context.annotation.Import
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.test.context.ActiveProfiles
@@ -21,8 +22,13 @@ import org.springframework.test.context.ActiveProfiles
  * - 자연키 UNIQUE 제약이 실DB에서 동작하는지 (같은 공급사 상품 = 같은 내부 id 보장의 근거)
  * - 감사 컬럼을 JPA Auditing 이 실제로 채우는지
  * - upsert 에 쓰는 자연키 조회가 동작하는지
+ *
+ * JPA 슬라이스(@DataJpaTest)만 띄운다 — 검증 대상에 필요한 최소한의 컨텍스트 원칙.
+ * replace = NONE 은 슬라이스가 datasource 를 내장 DB로 치환하지 않고
+ * Testcontainers(@ServiceConnection)의 MySQL 을 그대로 쓰게 한다.
  */
-@SpringBootTest
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ActiveProfiles("test")
 @Import(TestcontainersConfiguration::class)
 class MappingPersistenceTest {
