@@ -771,3 +771,18 @@ PK + `Persistable` 구현은 ERD에서 기각한 결정과 충돌해 채택하�
 
 **테스트**: AvailabilityPolicyTest 6건, PriceTest 7건, MappingPersistenceTest 6건. 영속화 테스트는 실제
 MySQL 8.4(Testcontainers)에서 UNIQUE 제약 동작·감사 컬럼 채움·자연키 조회를 검증한다.
+
+### 19:26 · 자동 리뷰 지적 반영 (PR #5)
+
+리뷰 결론은 차단급 문제 없음. 실행 가능한 지적 두 건을 수용해 반영했다.
+
+- **`Price` 생성 경로 봉인**: "평균 = 총액 ÷ 박수(내림)" 불변식이 `of()` 팩토리에서만 지켜지고 public
+  생성자로 우회 가능하다는 지적. 생성자를 private 으로 막고 `@ConsistentCopyVisibility`를 함께 붙였다 —
+  이것이 없으면 data class 의 `copy()`가 private 생성자를 다시 노출하는 구멍이 남는다(Kotlin 2.1).
+  컴파일 통과가 "생성자·copy 를 직접 쓰는 코드가 없다"는 확인을 겸한다.
+- **`MappingPersistenceTest`를 `@DataJpaTest` 슬라이스로**: 리포지토리 검증에 전체 컨텍스트를 띄우는
+  것은 최소 컨텍스트 원칙 위반이라는 지적. `replace = NONE`으로 슬라이스가 datasource 를 내장 DB로
+  치환하지 않고 Testcontainers 의 MySQL 을 그대로 쓰게 했다. `@EnableJpaAuditing`은 컨텍스트 루트
+  (애플리케이션 클래스)에 있어 슬라이스에서도 적용된다.
+
+엔티티 필드 검증(blank·양수) 부재 지적은 리뷰 권고대로 upsert 로직이 붙는 동기화 라운드로 이월한다.
