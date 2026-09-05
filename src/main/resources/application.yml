@@ -2,20 +2,21 @@ spring:
   application:
     name: supplier-sync
   datasource:
-    url: jdbc:h2:mem:suppliersync;DB_CLOSE_DELAY=-1
-    driver-class-name: org.h2.Driver
-    username: sa
-    password:
+    # connectionTimeZone: 드라이버가 LocalDateTime 을 시간대 변환 없이 KST 벽시계 그대로 주고받는다 (docs/ERD.md)
+    url: jdbc:mysql://localhost:3306/supplier_sync?connectionTimeZone=Asia/Seoul
+    # 로컬 docker compose 컨테이너에서만 유효한 값 — 실제 환경이라면 환경변수 등 외부 주입이 원칙
+    username: supplier
+    password: supplier
+    hikari:
+      maximum-pool-size: 10  # 기본값과 같지만 결정을 명시 — 병목은 DB가 아니라 외부 공급사 호출
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      # 스키마는 Hibernate 가 엔티티 정의에서 생성·갱신한다. 볼륨으로 유지되는 로컬 데이터 보존을 위해 update
+      ddl-auto: update
     properties:
       hibernate:
         format_sql: true
     open-in-view: false
-  h2:
-    console:
-      enabled: true
 
 server:
   port: 8080

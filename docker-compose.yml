@@ -1,0 +1,24 @@
+# 로컬 개발용 MySQL. 테스트는 Testcontainers 가 별도 컨테이너를 스스로 띄운다 (docs/TECH_STACK.md)
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      TZ: Asia/Seoul  # DB 시계도 KST — JVM·JDBC 와 3계층 일치 (docs/ERD.md)
+      MYSQL_DATABASE: supplier_sync
+      # 로컬 컨테이너에서만 유효한 값 — 실제 환경이라면 환경변수 등 외부 주입이 원칙
+      MYSQL_USER: supplier
+      MYSQL_PASSWORD: supplier
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "127.0.0.1:3306:3306"  # 같은 네트워크의 다른 기기에서 접근하지 못하게 루프백에만 바인딩
+    healthcheck:
+      # 최초 기동은 initdb 로 수십 초가 걸린다 — docker compose up -d --wait 가 이 판정을 기다린다
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - mysql-data:/var/lib/mysql  # 컨테이너를 지워도 데이터 유지 — 초기화는 docker compose down -v 로만
+
+volumes:
+  mysql-data:

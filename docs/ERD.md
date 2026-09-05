@@ -16,8 +16,8 @@ erDiagram
         varchar      supplier "공급사 (A, B) — enum STRING"
         varchar      supplier_property_code "공급사 숙소 코드 (hotelCode / propertyId)"
         varchar      property_name "숙소명 (숙소 목록 API 출처)"
-        datetime     created_at "감사 — 생성 시각 (DB 관리)"
-        datetime     updated_at "감사 — 수정 시각 (DB 관리)"
+        datetime     created_at "감사 — 생성 시각 (JPA Auditing)"
+        datetime     updated_at "감사 — 수정 시각 (JPA Auditing)"
     }
 
     room_type {
@@ -26,8 +26,8 @@ erDiagram
         varchar      supplier_room_type_code "공급사 객실 타입 코드 (roomTypeCode / roomId)"
         varchar      room_type_name "객실 타입명"
         int          max_occupancy "객실 1실 최대 수용 인원 (성인+아동)"
-        datetime     created_at "감사 — 생성 시각 (DB 관리)"
-        datetime     updated_at "감사 — 수정 시각 (DB 관리)"
+        datetime     created_at "감사 — 생성 시각 (JPA Auditing)"
+        datetime     updated_at "감사 — 수정 시각 (JPA Auditing)"
     }
 ```
 
@@ -54,23 +54,25 @@ erDiagram
 
 ### 감사 컬럼 (BaseTimeEntity)
 
-두 테이블 모두 `BaseTimeEntity`(@MappedSuperclass)를 상속합니다. `created_at`/`updated_at`은
-애플리케이션이 아니라 **DB가 관리**합니다.
+두 테이블 모두 `BaseTimeEntity`(@MappedSuperclass)를 상속합니다. `created_at`/`updated_at`은 **Spring
+Data JPA Auditing이 관리**합니다 — `@CreatedDate`/`@LastModifiedDate`가 저장·수정 시점에 애플리케이션
+시계로 값을 채웁니다.
 
-```sql
-created_at datetime default current_timestamp
-updated_at datetime default current_timestamp on update current_timestamp
-```
+> 처음 결정은 DB 관리(`DEFAULT CURRENT_TIMESTAMP` / `ON UPDATE CURRENT_TIMESTAMP`)였으나, 스키마 관리
+> 주체를 Hibernate(`ddl-auto`)로 정하면서 함께 변경했습니다. 이 DDL은 Hibernate가 생성하지 못해
+> `columnDefinition` 우회와 `insertable=false`·refresh가 따라붙는데, 모든 쓰기가 JPA를 거치는 구조에서는
+> 스키마와 감사의 관리 주체를 애플리케이션 한쪽으로 통일하는 편이 단순합니다. (JOURNAL 2026-09-05)
 
 타입은 `DATETIME`입니다 — MySQL의 `TIMESTAMP`는 32비트 epoch 기반이라 2038-01-19(UTC)까지만 표현할 수
-있는 반면, `DATETIME`은 9999년까지 지원합니다. `DEFAULT CURRENT_TIMESTAMP`와 `ON UPDATE
-CURRENT_TIMESTAMP`는 `DATETIME`에서도 동일하게 동작합니다. 대신 `DATETIME`은 세션 시간대에 따른 변환 없이
-쓴 값을 그대로 저장하므로, **애플리케이션과 DB의 시간대를 KST(Asia/Seoul)로 고정**하는 것이 전제입니다.
+있는 반면, `DATETIME`은 9999년까지 지원합니다. 대신 `DATETIME`은 세션 시간대에 따른 변환 없이 쓴 값을
+그대로 저장하므로, **애플리케이션과 DB의 시간대를 KST(Asia/Seoul)로 고정**하는 것이 전제입니다. 이 전제는
+세 계층에 전부 명시로 구현됩니다 — JVM(기동 시 `TimeZone.setDefault`, 테스트 JVM은 Gradle
+`user.timezone`), MySQL 컨테이너(`TZ`), JDBC 연결(`connectionTimeZone`). 하나만 어긋나면 로컬(KST)에서는
+재현되지 않고 CI(UTC 러너)에서만 나타나는 9시간 오프셋 버그가 되므로 암묵적 기본값에 기대지 않습니다.
 정밀도는 초 단위로 충분해 소수점(fractional seconds)은 두지 않습니다.
 
-애플리케이션은 이 컬럼에 값을 쓰지 않습니다(insert 컬럼 목록에서 제외, Hibernate `@Generated`). 매핑은
-배치로 갱신되는 정적 데이터라 "언제 마지막으로 동기화됐는지"를 운영에서 추적할 수 있어야 하기 때문에 감사
-컬럼을 둡니다.
+매핑은 배치로 갱신되는 정적 데이터라 "언제 마지막으로 동기화됐는지"를 운영에서 추적할 수 있어야 하기
+때문에 감사 컬럼을 둡니다.
 
 ## 저장하지 않는 것 — 런타임 표준 모델
 
