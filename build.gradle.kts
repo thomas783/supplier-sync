@@ -1,13 +1,14 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
+// 플러그인 버전은 settings.gradle.kts 의 pluginManagement 가 단일 원천
 plugins {
-    kotlin("jvm") version "2.1.20"
+    kotlin("jvm")
     // Spring 빈(@Component/@Configuration/@Transactional 등)을 open 처리 → AOP/트랜잭션 프록시 생성 가능
-    kotlin("plugin.spring") version "2.1.20"
+    kotlin("plugin.spring")
     // JPA(@Entity/@MappedSuperclass/@Embeddable)에 no-arg 생성자 생성 → Hibernate 인스턴스화
-    kotlin("plugin.jpa") version "2.1.20"
-    id("org.springframework.boot") version "3.4.13"
-    id("io.spring.dependency-management") version "1.1.7"
+    kotlin("plugin.jpa")
+    id("org.springframework.boot")
+    id("io.spring.dependency-management")
 }
 
 group = "com.staysync"
@@ -49,6 +50,8 @@ dependencies {
     testImplementation("org.testcontainers:mysql")
     // 어댑터 HTTP 계약 검증용 목 서버 — 버전은 Boot BOM 관리 밖이라 명시 고정
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    // 실행형 Mock 공급사 서버와의 통합 테스트 (MockSupplierIntegrationTest 가 직접 기동)
+    testImplementation(project(":mock-supplier"))
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 

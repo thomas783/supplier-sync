@@ -24,6 +24,7 @@
 docker compose up -d --wait  # 로컬 MySQL 8.4 기동, 준비 완료까지 대기 — 데이터는 네임드 볼륨에 유지
 ./gradlew build              # 컴파일 + 테스트
 ./gradlew test               # 테스트만 실행
+./gradlew :mock-supplier:bootRun  # Mock 공급사 서버 실행 (9090) — 본 앱보다 먼저 띄운다
 ./gradlew bootRun            # 애플리케이션 실행 (기본 8080)
 ```
 
