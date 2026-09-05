@@ -161,8 +161,8 @@ A의 날짜별 net+세금은 합산하면 세금 포함 총액이 되지만, B�
 | 표준 용어 | 의미 | 공급사 A 원시 | 공급사 B 원시 |
 |---|---|---|---|
 | `supplier` | 공급사 — 상품의 출처이자 내부 식별자의 네임스페이스 | — | — |
-| `property` | 숙소. 엔티티 `Property`, 테이블 `property` | hotelCode / hotelName | propertyId / propertyName |
-| `roomType` | 객실 타입(개별 물리 객실 아님). 엔티티 `RoomType`, 테이블 `room_type` | roomTypeCode / roomTypeName | roomId / roomName |
+| `property` | 숙소. 엔티티 `PropertyEntity`, 테이블 `property` | hotelCode / hotelName | propertyId / propertyName |
+| `roomType` | 객실 타입(개별 물리 객실 아님). 엔티티 `RoomTypeEntity`, 테이블 `room_type` | roomTypeCode / roomTypeName | roomId / roomName |
 | `StayProduct` | 숙박 상품 단위 — 요금 + 가용성 + 출처가 붙은 검색 결과 항목 | — | — |
 | `price` | 요금 묶음(총액·평균 1박가·일자별 실측·통화). 조식 여부는 `StayProduct` 속성 | — | — |
 | `availability` | StayProduct의 가용성 3상태: `AVAILABLE` / `SOLD_OUT` / `UNDETERMINED` | — | — |
