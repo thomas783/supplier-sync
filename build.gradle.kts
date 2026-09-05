@@ -50,6 +50,8 @@ dependencies {
     testImplementation("org.testcontainers:mysql")
     // 어댑터 HTTP 계약 검증용 목 서버 — 버전은 Boot BOM 관리 밖이라 명시 고정
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    // 실행형 Mock 공급사 서버와의 통합 테스트 (MockSupplierIntegrationTest 가 직접 기동)
+    testImplementation(project(":mock-supplier"))
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
