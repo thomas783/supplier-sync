@@ -1,6 +1,7 @@
 package com.staysync.supplier
 
 import com.staysync.domain.model.Supplier
+import io.netty.channel.ConnectTimeoutException
 import io.netty.handler.timeout.ReadTimeoutException
 import org.springframework.web.reactive.function.client.WebClientResponseException
 import java.time.LocalDate
@@ -101,6 +102,11 @@ internal fun toSupplierError(supplier: Supplier, endpoint: String, t: Throwable)
  */
 internal fun isRetryableStatus(status: Int): Boolean = status >= 500 || status == 429
 
-/** 무응답(응답 타임아웃) 예외 식별. [toSupplierError] 안에서만 쓰인다. */
+/**
+ * 무응답 계열 예외 식별 — 응답 타임아웃과 연결 타임아웃 모두. [toSupplierError] 안에서만 쓰인다.
+ * Netty 의 [ConnectTimeoutException] 은 [TimeoutException] 이 아니라 ConnectException 계열이라 따로 명시한다.
+ */
 private fun isTimeout(t: Throwable): Boolean =
-    t is ReadTimeoutException || t.cause is ReadTimeoutException || t is TimeoutException
+    t is ReadTimeoutException || t.cause is ReadTimeoutException ||
+        t is ConnectTimeoutException || t.cause is ConnectTimeoutException ||
+        t is TimeoutException
