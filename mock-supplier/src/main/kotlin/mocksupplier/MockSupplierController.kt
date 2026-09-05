@@ -25,7 +25,10 @@ class MockSupplierController {
 
     @PostMapping("/control/{supplier}/mode")
     fun setMode(@PathVariable supplier: String, @RequestParam value: String): ResponseEntity<Map<String, String>> {
-        // 오타 난 모드가 조용히 normal 로 동작하면 장애 주입이 안 된 채 시연하게 된다 — 즉시 거부
+        // 오타(공급사든 모드든)가 조용히 normal 로 동작하면 장애 주입이 안 된 채 시연하게 된다 — 즉시 거부
+        if (supplier !in VALID_SUPPLIERS) {
+            return ResponseEntity.badRequest().body(mapOf("error" to "unknown supplier: $supplier (a|b)"))
+        }
         if (value !in VALID_MODES) {
             return ResponseEntity.badRequest().body(mapOf("error" to "unknown mode: $value (normal|error|no-response)"))
         }
@@ -62,6 +65,7 @@ class MockSupplierController {
         }
 
     companion object {
+        private val VALID_SUPPLIERS = setOf("a", "b")
         private val VALID_MODES = setOf("normal", "error", "no-response")
 
         // 호출 측 응답 타임아웃(5초)보다 충분히 길게 잡아 "무응답"을 재현한다
