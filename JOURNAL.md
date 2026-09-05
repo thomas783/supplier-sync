@@ -590,3 +590,24 @@ config`, 의존 방향은 `web → search·sync → (supplier 포트 / domain)`�
 실체로 만드는 것이 다른 모든 PR의 전제가 된다. 내용: main 대상 push·PR에서 Temurin 21로 `./gradlew build`
 (컴파일 + 전체 테스트) 실행. 검사 항목을 로컬 완료 기준(DoD)과 일치시켜 "로컬에서 통과하면 CI에서도
 통과"하게 했고, JDK는 toolchain 결정과 동일하게 21로 고정했다. (브랜치: `ci/build-workflow`)
+
+### 13:44 · CI 로그 점검 두 건 (PR #1)
+
+- **"Support for Java 23" 문구**: 경고가 아니라 Gradle 8.10.2 릴리스 하이라이트 배너로, Gradle 실행 JVM의
+  상한이 23이라는 뜻이다. CI는 Temurin 21로 실행되어 상한 안쪽이라 조치 불필요. 함의는 이미 문서화된
+  내용(로컬 셸도 `JAVA_HOME` 21 권장)과 동일하다. 래퍼 업그레이드는 실제 필요가 생길 때 별도 결정으로.
+- **Node 20 지원 중단 경고(사용자 발견)**: `checkout@v4` 등 구형 액션이 타깃하는 Node 20을 GitHub이 지원
+  중단했고, 지금은 러너가 강제로 Node 24에서 돌려주지만 유예가 끝나면 실패한다. 빌드 자체(Java/Gradle)와
+  무관한 액션 런타임 문제라, 열려 있는 CI PR에서 바로 해결 — 최신 메이저(checkout v7, setup-java v6,
+  setup-gradle v6)로 올리고 CI 재실행 통과 확인.
+
+### 13:50 · PR 머지 정책 — merge commit (PR #1)
+
+**논의**: squash vs rebase 중 무엇이 좋냐는 질문에서 출발했다. 판단 기준은 스스로 세운 원칙 — "커밋은
+원자적으로, 히스토리가 산출물". **squash**는 PR 전체를 커밋 하나로 뭉개 정성 들여 쪼갠 원자 커밋과 과정을
+main 히스토리에서 지우므로 배제(WIP 커밋이 많은 팀에서 빛나는 방식인데 우리는 반대로 커밋을 의도적으로
+설계한다). **rebase**는 원자 커밋을 보존하고 선형이지만 PR 경계의 표식이 없다. AI는 둘 중에서는 rebase를
+추천하면서 merge commit(원자 보존 + PR 경계 표식, 비선형 그래프 감수)을 병기했고, **사용자가 merge
+commit을 선택**했다.
+
+**결정(수용)**: **merge commit 방식 확정.** CLAUDE.md Git 워크플로 절에 반영. PR #1부터 적용한다.
