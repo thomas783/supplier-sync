@@ -181,6 +181,15 @@ class StaySearchIntegrationTest {
     }
 
     @Test
+    fun `여러 필수 파라미터 동시 누락 - 어떤 필드든 누락 사유로 응답한다`() {
+        // 다중 위반의 대표 선택은 종류 우선순위로만 보장된다 — 같은 종류 안에서 어느 필드가 뽑힐지는
+        // 비결정적이므로 사유의 종류(누락)만 고정한다
+        mockMvc.perform(get("/api/v1/stays/search"))
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.message", containsString("필수 파라미터가 누락되었습니다")))
+    }
+
+    @Test
     fun `필수 파라미터 누락 - 400 일관 에러`() {
         mockMvc.perform(
             get("/api/v1/stays/search")
