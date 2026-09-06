@@ -28,6 +28,9 @@ supplier:
   # 흡수되고, 지표(p95/p99)가 쌓이면 그때 조인다.
   connect-timeout-ms: 1000
   response-timeout-ms: 5000
+  # 재고·요금 병렬 조회의 동시 호출 상한 — 청크 수는 숙소 수에 비례해 커지므로 상한이 없으면
+  # 공급사에 수백 개의 동시 요청이 몰릴 수 있다 (docs/INTEGRATION.md)
+  max-concurrent-calls: 16
   # base URL·키는 로컬 Mock 공급사 서버 기준 값 — 실제 연동이라면 환경별 외부 주입이 원칙
   a:
     base-url: http://localhost:9090

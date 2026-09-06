@@ -37,15 +37,11 @@ GET /api/v1/stays/search?checkIn=2026-09-01&checkOut=2026-09-04&adults=2&childre
 {
   "stayProducts": [
     {
-      "propertyId": 1,
-      "propertyName": "Riverside Hotel Seoul",
-      "roomTypeId": 1,
-      "roomTypeName": "Deluxe Twin",
-      "maxOccupancy": 2,
-      "supplier": "A",
+      "property": { "id": 1, "name": "Riverside Hotel Seoul" },
+      "roomType": { "id": 1, "name": "Deluxe Twin", "maxOccupancy": 2 },
       "breakfastIncluded": false,
-      "isAvailable": true,
-      "availableRooms": 1,
+      "availability": { "isAvailable": true, "availableRooms": 1 },
+      "supplier": "A",
       "price": {
         "totalAmount": 429000,
         "averageNightlyAmount": 143000,
@@ -53,15 +49,11 @@ GET /api/v1/stays/search?checkIn=2026-09-01&checkOut=2026-09-04&adults=2&childre
       }
     },
     {
-      "propertyId": 3,
-      "propertyName": "Riverside Hotel Seoul",
-      "roomTypeId": 3,
-      "roomTypeName": "Deluxe Twin Room",
-      "maxOccupancy": 2,
-      "supplier": "B",
+      "property": { "id": 3, "name": "Riverside Hotel Seoul" },
+      "roomType": { "id": 3, "name": "Deluxe Twin Room", "maxOccupancy": 2 },
       "breakfastIncluded": true,
-      "isAvailable": false,
-      "availableRooms": 0,
+      "availability": { "isAvailable": false, "availableRooms": 0 },
+      "supplier": "B",
       "price": {
         "totalAmount": 452000,
         "averageNightlyAmount": 150666,
@@ -73,6 +65,10 @@ GET /api/v1/stays/search?checkIn=2026-09-01&checkOut=2026-09-04&adults=2&childre
 }
 ```
 
+상품 항목의 중첩 구조는 표준 모델([DOMAIN_MODEL.md](DOMAIN_MODEL.md))의 네 단위 조합을 그대로
+비춥니다 — 숙소(`property`) × 객실(`roomType`)이 상품의 정체성을, 요금(`price`)과
+가용성(`availability`)이 검색 조건에서의 판매 정보를 담습니다.
+
 첫 항목은 예약 가능한 상품이고, 두 번째 항목은 **확정 매진** 상품입니다 — 매진도 응답에 노출됩니다(아래
 노출 정책). 같은 실제 호텔이라도 공급사가 다르면 별개 상품(별개 내부 id)으로 나란히 노출되며, 조식·총액
 같은 조건 차이를 보고 고객이 직접 비교합니다(근거는 [DOMAIN_MODEL.md](DOMAIN_MODEL.md)).
@@ -81,13 +77,13 @@ GET /api/v1/stays/search?checkIn=2026-09-01&checkOut=2026-09-04&adults=2&childre
 
 | 필드 | 의미 |
 |---|---|
-| `stayProducts[].propertyId` / `propertyName` | 내부 숙소 식별자(공급사 코드가 아닌 자사 대리키)와 숙소명 |
-| `stayProducts[].roomTypeId` / `roomTypeName` | 내부 객실 타입 식별자와 객실 타입명 |
-| `stayProducts[].maxOccupancy` | 객실 1실의 최대 수용 인원(성인+아동 합산) |
+| `stayProducts[].property.id` / `.name` | 내부 숙소 식별자(공급사 코드가 아닌 자사 대리키)와 숙소명 |
+| `stayProducts[].roomType.id` / `.name` | 내부 객실 타입 식별자와 객실 타입명 |
+| `stayProducts[].roomType.maxOccupancy` | 객실 1실의 최대 수용 인원(성인+아동 합산) |
 | `stayProducts[].supplier` | 출처 공급사 (`A` / `B`) |
 | `stayProducts[].breakfastIncluded` | 조식 포함 여부 — 돈이 아니라 상품의 조건이라 `price` 밖, 가격 비교 시 조건 차이를 드러냄 |
-| `stayProducts[].isAvailable` | 예약 가능 여부 — **서버가 보장하는 편의 파생값** (진실은 `availableRooms`) |
-| `stayProducts[].availableRooms` | 요청 기간 전체를 통으로 예약할 수 있는 객실 수. **0이면 확정 매진** |
+| `stayProducts[].availability.isAvailable` | 예약 가능 여부 — **서버가 보장하는 편의 파생값** (진실은 `availableRooms`) |
+| `stayProducts[].availability.availableRooms` | 요청 기간 전체를 통으로 예약할 수 있는 객실 수. **0이면 확정 매진** |
 | `stayProducts[].price.totalAmount` | 숙박 기간 전체의 세금 포함 총액 — **정산·결제 금액의 기준** |
 | `stayProducts[].price.averageNightlyAmount` | 평균 1박가 = 총액 ÷ 박수(내림). 표시용 파생값이라 평균×박수 ≠ 총액일 수 있음 |
 | `stayProducts[].price.currency` | ISO 4217 통화 코드. 환산하지 않고 원 통화 그대로(현재 범위는 KRW) |
@@ -95,7 +91,8 @@ GET /api/v1/stays/search?checkIn=2026-09-01&checkOut=2026-09-04&adults=2&childre
 
 ### 가용성 노출 정책
 
-도메인의 가용성 판정은 3상태이며, wire에는 그 결과가 `availableRooms` 숫자 하나로 직렬화됩니다.
+도메인의 가용성 판정은 3상태이며, wire에는 그 결과가 `availability.availableRooms` 숫자 하나로
+직렬화됩니다.
 
 | 도메인 상태 | 조건 | 응답에서 |
 |---|---|---|
@@ -132,11 +129,11 @@ wire에서 상태가 숫자로 완전히 유도되므로 별도 status 필드는
 
 ```json
 // 400 — 클라이언트가 고칠 수 있으므로 구체적 사유
-{ "status": 400, "error": "Bad Request", "message": "checkOut must be after checkIn" }
-{ "status": 400, "error": "Bad Request", "message": "missing required parameter 'adults'" }
+{ "status": 400, "error": "Bad Request", "message": "checkOut은 checkIn보다 뒤여야 합니다" }
+{ "status": 400, "error": "Bad Request", "message": "필수 파라미터가 누락되었습니다: 'adults'" }
 
 // 500 — 내부 상세는 로그에만, 응답은 불투명
-{ "status": 500, "error": "Internal Server Error", "message": "internal error" }
+{ "status": 500, "error": "Internal Server Error", "message": "내부 오류가 발생했습니다" }
 ```
 
 ## 운영 엔드포인트
