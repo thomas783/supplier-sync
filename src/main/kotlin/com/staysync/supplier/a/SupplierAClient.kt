@@ -8,6 +8,7 @@ import com.staysync.supplier.SupplierClient
 import com.staysync.supplier.SupplierProperty
 import com.staysync.supplier.SupplierRoomType
 import com.staysync.supplier.SupplierStayProduct
+import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Component
 import org.springframework.web.reactive.function.client.WebClient
@@ -19,11 +20,14 @@ import java.time.format.DateTimeFormatter
  * Supplier A 어댑터.
  * - 실패 판정: HTTP 4xx/5xx → [SupplierCallException]. 5xx·429 는 재시도 가능으로 분류.
  * - 요금 변환: 날짜별 (nightlyRate + taxAmount) 를 합산해 gross 총액으로.
+ * - 중복 날짜 방어: 같은 날짜가 두 번 오면 총액이 이중 합산되고 잔여 수는 임의의 값이 된다 — 정답을
+ *   추측할 수 없으므로 그 항목만 제외한다(보수 원칙). 공급사 전체 응답은 죽이지 않는다.
  */
 @Component
 class SupplierAClient(
     @param:Qualifier("supplierAWebClient") private val webClient: WebClient,
 ) : SupplierClient {
+    private val log = LoggerFactory.getLogger(javaClass)
 
     override val supplier = Supplier.A
 
@@ -56,7 +60,7 @@ class SupplierAClient(
             }
             .retrieve()
             .bodyToMono<SupplierABaseResponse<SupplierAAvailabilityItem>>()
-            .map { response -> response.items.map { it.toStayProduct() } }
+            .map { response -> response.items.mapNotNull { it.toStayProductOrNull() } }
             .onErrorMap { toSupplierError(supplier, AVAILABILITY_ENDPOINT, it) }
 
     private fun SupplierAHotel.toSupplierProperty(): SupplierProperty = SupplierProperty(
@@ -71,18 +75,24 @@ class SupplierAClient(
         },
     )
 
-    private fun SupplierAAvailabilityItem.toStayProduct(): SupplierStayProduct = SupplierStayProduct(
-        supplierPropertyCode = hotelCode,
-        propertyName = hotelName,
-        supplierRoomTypeCode = roomTypeCode,
-        roomTypeName = roomTypeName,
-        maxOccupancy = maxOccupancy,
-        breakfastIncluded = breakfastIncluded,
-        currency = currency,
-        // 세금 별도(net) → gross 총액 = Σ(nightlyRate + taxAmount)
-        grossTotalAmount = dailyRates.sumOf { it.nightlyRate + it.taxAmount },
-        remainingByDate = dailyRates.associate { it.date to it.remainingRooms },
-    )
+    private fun SupplierAAvailabilityItem.toStayProductOrNull(): SupplierStayProduct? {
+        if (dailyRates.size != dailyRates.distinctBy { it.date }.size) {
+            log.warn("skipping item with duplicate dates: supplier={} hotelCode={} roomTypeCode={}", supplier, hotelCode, roomTypeCode)
+            return null
+        }
+        return SupplierStayProduct(
+            supplierPropertyCode = hotelCode,
+            propertyName = hotelName,
+            supplierRoomTypeCode = roomTypeCode,
+            roomTypeName = roomTypeName,
+            maxOccupancy = maxOccupancy,
+            breakfastIncluded = breakfastIncluded,
+            currency = currency,
+            // 세금 별도(net) → gross 총액 = Σ(nightlyRate + taxAmount)
+            grossTotalAmount = dailyRates.sumOf { it.nightlyRate + it.taxAmount },
+            remainingByDate = dailyRates.associate { it.date to it.remainingRooms },
+        )
+    }
 
     companion object {
         private const val HOTELS_ENDPOINT = "/a/v1/hotels"

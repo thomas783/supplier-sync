@@ -127,6 +127,31 @@ class SupplierAClientTest {
     }
 
     @Test
+    fun `중복 날짜가 온 항목은 그 항목만 제외된다 - 총액 이중 합산을 막는 보수 방어`() {
+        enqueueJson(
+            """
+            {
+              "items": [
+                { "hotelCode": "A-10023", "hotelName": "정상", "roomTypeCode": "DLX-TWN",
+                  "roomTypeName": "Deluxe Twin", "maxOccupancy": 2, "breakfastIncluded": false, "currency": "KRW",
+                  "dailyRates": [ { "date": "2026-09-01", "remainingRooms": 3, "nightlyRate": 100000, "taxAmount": 10000 } ] },
+                { "hotelCode": "A-10044", "hotelName": "중복 날짜", "roomTypeCode": "STD-DBL",
+                  "roomTypeName": "Standard Double", "maxOccupancy": 2, "breakfastIncluded": false, "currency": "KRW",
+                  "dailyRates": [
+                    { "date": "2026-09-01", "remainingRooms": 2, "nightlyRate": 88000, "taxAmount": 8800 },
+                    { "date": "2026-09-01", "remainingRooms": 5, "nightlyRate": 88000, "taxAmount": 8800 }
+                  ] }
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        val products = client.fetchStayProducts(query).block()!!
+
+        assertEquals(listOf("A-10023"), products.map { it.supplierPropertyCode })
+    }
+
+    @Test
     fun `본문 없는 200 은 계약 위반 실패다 - 정상 빈 응답은 items 빈 배열로 온다`() {
         server.enqueue(MockResponse().setResponseCode(200)) // 본문 없음
 

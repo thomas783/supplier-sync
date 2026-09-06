@@ -116,6 +116,30 @@ class SupplierBClientTest {
     }
 
     @Test
+    fun `중복 날짜가 온 항목은 그 항목만 제외된다 - 잔여 수의 임의 선택을 막는 보수 방어`() {
+        enqueueJson(
+            """
+            {
+              "resultCode": "0000", "resultMessage": "SUCCESS",
+              "data": { "items": [
+                { "propertyId": "B77120", "propertyName": "중복 날짜", "roomId": "R-401",
+                  "roomName": "Deluxe Twin Room", "maxOccupancy": 2, "breakfastIncluded": true, "currency": "KRW",
+                  "totalPrice": 452000, "taxIncluded": true,
+                  "inventory": [
+                    { "date": "2026-09-01", "remainingRooms": 3 },
+                    { "date": "2026-09-01", "remainingRooms": 1 }
+                  ] }
+              ] }
+            }
+            """.trimIndent(),
+        )
+
+        val products = client.fetchStayProducts(query).block()!!
+
+        assertEquals(emptyList<Any>(), products)
+    }
+
+    @Test
     fun `성공 코드인데 data 가 없으면 계약 위반 실패다 - 정상 빈 결과는 data 안의 빈 items 로 온다`() {
         enqueueJson("""{"resultCode":"0000","resultMessage":"SUCCESS","data":null}""")
 
