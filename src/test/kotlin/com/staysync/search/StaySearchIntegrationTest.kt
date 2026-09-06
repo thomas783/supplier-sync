@@ -24,6 +24,7 @@ import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import java.util.concurrent.atomic.AtomicReference
@@ -181,6 +182,15 @@ class StaySearchIntegrationTest {
     }
 
     @Test
+    fun `여러 필수 파라미터 동시 누락 - 어떤 필드든 누락 사유로 응답한다`() {
+        // 다중 위반의 대표 선택은 종류 우선순위로만 보장된다 — 같은 종류 안에서 어느 필드가 뽑힐지는
+        // 비결정적이므로 사유의 종류(누락)만 고정한다
+        mockMvc.perform(get("/api/v1/stays/search"))
+            .andExpect(status().isBadRequest)
+            .andExpect(jsonPath("$.message", containsString("필수 파라미터가 누락되었습니다")))
+    }
+
+    @Test
     fun `필수 파라미터 누락 - 400 일관 에러`() {
         mockMvc.perform(
             get("/api/v1/stays/search")
@@ -190,6 +200,21 @@ class StaySearchIntegrationTest {
             .andExpect(status().isBadRequest)
             .andExpect(jsonPath("$.status").value(400))
             .andExpect(jsonPath("$.message", containsString("adults")))
+    }
+
+    @Test
+    fun `존재하지 않는 경로 - 500 으로 뭉개지 않고 같은 포맷의 404 로 응답한다`() {
+        mockMvc.perform(get("/api/v1/no-such-path"))
+            .andExpect(status().isNotFound)
+            .andExpect(jsonPath("$.status").value(404))
+            .andExpect(jsonPath("$.message").value("요청한 경로를 찾을 수 없습니다"))
+    }
+
+    @Test
+    fun `허용되지 않은 메서드 - 같은 포맷의 405 로 응답한다`() {
+        mockMvc.perform(post("/api/v1/stays/search"))
+            .andExpect(status().isMethodNotAllowed)
+            .andExpect(jsonPath("$.status").value(405))
     }
 
     @Test
