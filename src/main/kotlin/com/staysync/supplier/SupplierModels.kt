@@ -38,9 +38,6 @@ data class SupplierRoomType(
  *
  * 요금은 두 공급사 교집합인 "세금 포함 총액(gross)"으로 이미 통일해 담는다
  * (A: Σ(nightlyRate + taxAmount), B: totalPrice).
- *
- * @property nightlyAmountsByDate 일자별 실측 금액(gross). 실측을 주는 공급사(A)만 채우고 없는
- *   공급사(B)는 빈 맵 — 평균을 복제해 채우지 않는다 (docs/DOMAIN_MODEL.md 의 nightlyRates 예외).
  */
 data class SupplierStayProduct(
     val supplierPropertyCode: String,
@@ -51,7 +48,6 @@ data class SupplierStayProduct(
     val breakfastIncluded: Boolean,
     val currency: String,
     val grossTotalAmount: Long,
-    val nightlyAmountsByDate: Map<LocalDate, Long>,
     val remainingByDate: Map<LocalDate, Int>,
 )
 

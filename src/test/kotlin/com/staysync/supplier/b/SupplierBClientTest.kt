@@ -75,7 +75,7 @@ class SupplierBClientTest {
     }
 
     @Test
-    fun `재고 요금 - totalPrice 를 gross 총액으로 담고 일자별 실측은 비운다`() {
+    fun `재고 요금 - totalPrice 를 gross 총액으로 그대로 담는다`() {
         enqueueJson(MockSupplierResponses.B_SEARCH)
 
         val product = client.fetchStayProducts(query).block()!!.single()
@@ -83,8 +83,6 @@ class SupplierBClientTest {
         assertEquals(452000, product.grossTotalAmount)
         assertEquals("KRW", product.currency)
         assertEquals(true, product.breakfastIncluded)
-        // B 는 일자별 실측을 주지 않는다 — 평균을 복제해 채우지 않고 빈 맵으로 둔다
-        assertEquals(emptyMap<LocalDate, Long>(), product.nightlyAmountsByDate)
         assertEquals(
             mapOf(
                 LocalDate.of(2026, 9, 1) to 3,
@@ -115,6 +113,30 @@ class SupplierBClientTest {
         }
         assertTrue(ex.reason.contains("E400"))
         assertEquals(false, ex.retryable)
+    }
+
+    @Test
+    fun `중복 날짜가 온 항목은 그 항목만 제외된다 - 잔여 수의 임의 선택을 막는 보수 방어`() {
+        enqueueJson(
+            """
+            {
+              "resultCode": "0000", "resultMessage": "SUCCESS",
+              "data": { "items": [
+                { "propertyId": "B77120", "propertyName": "중복 날짜", "roomId": "R-401",
+                  "roomName": "Deluxe Twin Room", "maxOccupancy": 2, "breakfastIncluded": true, "currency": "KRW",
+                  "totalPrice": 452000, "taxIncluded": true,
+                  "inventory": [
+                    { "date": "2026-09-01", "remainingRooms": 3 },
+                    { "date": "2026-09-01", "remainingRooms": 1 }
+                  ] }
+              ] }
+            }
+            """.trimIndent(),
+        )
+
+        val products = client.fetchStayProducts(query).block()!!
+
+        assertEquals(emptyList<Any>(), products)
     }
 
     @Test

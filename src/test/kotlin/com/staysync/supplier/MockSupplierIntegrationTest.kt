@@ -45,7 +45,6 @@ class MockSupplierIntegrationTest {
         val products = client.fetchStayProducts(query).block()!!
         val riverside = products.first { it.supplierPropertyCode == "A-10023" }
         assertEquals(429000, riverside.grossTotalAmount) // (120000+12000)+(150000+15000)+(120000+12000)
-        assertEquals(3, riverside.nightlyAmountsByDate.size)
     }
 
     @Test
@@ -57,7 +56,6 @@ class MockSupplierIntegrationTest {
 
         val product = client.fetchStayProducts(query).block()!!.single()
         assertEquals(452000, product.grossTotalAmount)
-        assertEquals(emptyMap<LocalDate, Long>(), product.nightlyAmountsByDate) // B 는 실측 없음
     }
 
     @Test

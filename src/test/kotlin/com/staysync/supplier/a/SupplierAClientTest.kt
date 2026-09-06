@@ -70,7 +70,7 @@ class SupplierAClientTest {
     }
 
     @Test
-    fun `재고 요금 - net+tax 를 합산해 gross 총액으로 변환하고 일자별 실측을 보존한다`() {
+    fun `재고 요금 - net+tax 를 합산해 gross 총액으로 변환한다`() {
         enqueueJson(MockSupplierResponses.A_AVAILABILITY)
 
         val products = client.fetchStayProducts(query).block()!!
@@ -80,15 +80,6 @@ class SupplierAClientTest {
         assertEquals(429000, riverside.grossTotalAmount)
         assertEquals("KRW", riverside.currency)
         assertEquals(false, riverside.breakfastIncluded)
-        // 일자별 실측은 gross(단가+세금)로 보존된다
-        assertEquals(
-            mapOf(
-                LocalDate.of(2026, 9, 1) to 132000L,
-                LocalDate.of(2026, 9, 2) to 165000L,
-                LocalDate.of(2026, 9, 3) to 132000L,
-            ),
-            riverside.nightlyAmountsByDate,
-        )
         assertEquals(
             mapOf(
                 LocalDate.of(2026, 9, 1) to 3,
@@ -133,6 +124,31 @@ class SupplierAClientTest {
         }
         assertTrue(ex.reason.contains("400"))
         assertEquals(false, ex.retryable)
+    }
+
+    @Test
+    fun `중복 날짜가 온 항목은 그 항목만 제외된다 - 총액 이중 합산을 막는 보수 방어`() {
+        enqueueJson(
+            """
+            {
+              "items": [
+                { "hotelCode": "A-10023", "hotelName": "정상", "roomTypeCode": "DLX-TWN",
+                  "roomTypeName": "Deluxe Twin", "maxOccupancy": 2, "breakfastIncluded": false, "currency": "KRW",
+                  "dailyRates": [ { "date": "2026-09-01", "remainingRooms": 3, "nightlyRate": 100000, "taxAmount": 10000 } ] },
+                { "hotelCode": "A-10044", "hotelName": "중복 날짜", "roomTypeCode": "STD-DBL",
+                  "roomTypeName": "Standard Double", "maxOccupancy": 2, "breakfastIncluded": false, "currency": "KRW",
+                  "dailyRates": [
+                    { "date": "2026-09-01", "remainingRooms": 2, "nightlyRate": 88000, "taxAmount": 8800 },
+                    { "date": "2026-09-01", "remainingRooms": 5, "nightlyRate": 88000, "taxAmount": 8800 }
+                  ] }
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        val products = client.fetchStayProducts(query).block()!!
+
+        assertEquals(listOf("A-10023"), products.map { it.supplierPropertyCode })
     }
 
     @Test
