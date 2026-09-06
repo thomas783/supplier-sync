@@ -77,5 +77,5 @@ Data JPA Auditing이 관리**합니다 — `@CreatedDate`/`@LastModifiedDate`가
 ## 저장하지 않는 것 — 런타임 표준 모델
 
 검색 응답의 표준 모델(`StayProduct`와 그 안의 `price`)은 매 조회마다 어댑터 응답을 정규화해 만들며 영속화하지
-않습니다. 구조는 [DOMAIN_MODEL.md](DOMAIN_MODEL.md)를 참고하세요. `propertyId`/`roomTypeId` 필드에는 위
+않습니다. 구조는 [DOMAIN_MODEL.md](DOMAIN_MODEL.md)를 참고하세요. 응답의 `property.id`/`roomType.id` 필드에는 위
 매핑 테이블의 `id`가 채워져 내려갑니다.
