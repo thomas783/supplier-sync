@@ -1,0 +1,7 @@
+.git
+.gradle
+build
+mock-supplier/build
+.idea
+.local
+*.log

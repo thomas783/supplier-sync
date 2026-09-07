@@ -21,6 +21,16 @@
 
 ## 빌드와 실행
 
+**가장 빠른 실행 — Docker 만으로 전체 스택** (JDK 불필요):
+
+```bash
+docker compose --profile demo up -d --build --wait   # MySQL + Mock 공급사 + 본 앱을 이미지로 빌드해 기동
+# 준비되면: http://localhost:8080/swagger-ui.html 에서 바로 검색을 호출해 볼 수 있다
+docker compose --profile demo down                   # 정리 (MySQL 데이터 볼륨은 유지)
+```
+
+**로컬 개발 흐름** (JDK 21 필요):
+
 ```bash
 docker compose up -d --wait  # 로컬 MySQL 8.4 기동, 준비 완료까지 대기 — 데이터는 네임드 볼륨에 유지
 ./gradlew build              # 컴파일 + 테스트
