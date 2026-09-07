@@ -20,7 +20,7 @@
 | [CURRENCY.md](CURRENCY.md) | 통화·환율 처리 — 설계만, 외화 공급사 도입 시 (환산가·원가·환율 보존) |
 | [MERGE.md](MERGE.md) | 중복 상품 병합 — 설계만, 카탈로그 그룹핑(메타서치 형태) |
 | [BOOKING.md](BOOKING.md) | 예약 대행 흐름 — 설계만, 예약 시점 재검증·생성/취소 이벤트 캐시 무효화 |
-| [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md) | 보류된 결정 모음 — 재시도·서킷, 캐시·확장, 병합, 환율 |
+| [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md) | 보류된 결정 모음 — 캐시·확장, 병합, 환율, 예약 대행 |
 
 ## 권장 읽기 순서
 

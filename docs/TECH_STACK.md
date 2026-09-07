@@ -17,6 +17,7 @@
 | HTTP 클라이언트 | Spring WebClient (Reactor Netty) | Boot 관리 |
 | 영속화 | Spring Data JPA + MySQL | MySQL 8.4 (LTS) |
 | 회복탄력성 | Resilience4j (retry + circuit breaker) | 2.2.0 (BOM 밖 명시 고정) |
+| 지표 | Micrometer + Prometheus 노출 | Boot 관리 (registry runtimeOnly) |
 | API 문서 | springdoc-openapi (Swagger UI) | 2.7.0 (BOM 밖 명시 고정) |
 
 ## 선택의 근거
@@ -112,7 +113,6 @@ Spring Retry는 블로킹 메서드 대상 AOP라 리액티브 구간에 맞지 
 - **Reactor 내장 retry 최소주의** — 서킷 브레이커 부재, 도입 시점만 미루는 경로.
 - **Flyway** — 테이블 두 개 규모에 과잉. 스키마 변경 이력이 쌓이기 시작하면 재검토.
 
-## 아직 결정하지 않은 것 (해당 기능 논의 때 확정)
+## 나중으로 미룬 것
 
-- **지표 수집** — Micrometer + Prometheus 노출 여부와 계측 설계는 관측성 작업 때.
-- **API 문서화** — SpringDoc/Swagger 도입 여부는 웹 API 작업 때.
+- **Flyway** — 스키마 마이그레이션 도구. 테이블 두 개 규모엔 과잉이라, 변경 이력이 쌓이기 시작하면 재검토.
