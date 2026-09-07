@@ -101,9 +101,11 @@ internal fun toSupplierError(supplier: Supplier, endpoint: String, t: Throwable)
     // 무응답 — 응답 타임아웃(5초)에 끊긴 경우. 일시 장애로 보고 재시도 가능
     isTimeout(t) ->
         SupplierCallException(supplier, "$endpoint timeout (no response)", retryable = true, timedOut = true, cause = t)
-    // 역직렬화 실패(스키마 불일치) — 다시 받아도 같으므로 재시도 제외. 스키마 드리프트 신호라 별도 표시
+    // 역직렬화 실패(스키마 불일치) — 다시 받아도 같으므로 재시도 제외. 스키마 드리프트 신호라 별도 표시.
+    // reason 은 고정 문구만 쓴다 — DecodingException.message 는 공급사 응답 원문 스니펫을 포함하므로,
+    // 공개 응답(errors[].reason)으로 새면 안 된다. 원문 상세는 cause 로 보존돼 error 로그에만 남는다.
     isDecodeError(t) ->
-        SupplierCallException(supplier, "$endpoint decode failed: ${t.message}", retryable = false, decodeError = true, cause = t)
+        SupplierCallException(supplier, "$endpoint decode failed", retryable = false, decodeError = true, cause = t)
     // 그 외 (연결 실패 등) — 원인 불명은 보수적으로 재시도 제외
     else -> SupplierCallException(supplier, "$endpoint call failed: ${t.message}", retryable = false, cause = t)
 }

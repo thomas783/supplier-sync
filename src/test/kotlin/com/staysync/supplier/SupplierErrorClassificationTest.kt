@@ -102,6 +102,19 @@ class SupplierErrorClassificationTest {
         assertTrue(ex.decodeError)
     }
 
+    @Test
+    fun `역직렬화 실패의 원문 스니펫은 reason 에 노출되지 않는다 - 공개 응답 유출 방지`() {
+        // DecodingException.message 는 공급사 응답 원문을 포함한다(Jackson 기본). reason 은 공개 응답의
+        // errors[].reason 으로 나가므로 원문이 새면 안 된다 — 원문은 cause 로만 보존한다.
+        val withRawSnippet = DecodingException("""at [Source: (String)"{"secret":"raw-json-body"}"; line: 1]""")
+
+        val ex = toSupplierError(Supplier.A, "/a/v1/availability", withRawSnippet)
+
+        assertTrue(ex.decodeError)
+        assertFalse(ex.reason.contains("secret"))
+        assertFalse(ex.reason.contains("Source"))
+    }
+
     private fun http(status: Int): WebClientResponseException = WebClientResponseException.create(
         status, HttpStatus.valueOf(status).reasonPhrase, HttpHeaders(), ByteArray(0), null,
     )
