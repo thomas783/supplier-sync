@@ -76,6 +76,25 @@ GET /api/v1/stays/search?checkIn=2026-09-01&checkOut=2026-09-04&adults=2&childre
 정보 `errors`를 반환합니다. 계약 상세(검증 규칙, 응답 구조, 오류 포맷)는
 [docs/API.md](docs/API.md)에 있습니다.
 
+## 지표 확인
+
+연동 상태는 공급사별 지표로 관측합니다 — 수집기 없이 curl 로 바로 읽힙니다.
+
+```bash
+# 검색을 몇 번 날린 뒤
+curl -s http://localhost:8080/actuator/prometheus | grep supplier_stayproducts
+```
+
+```
+supplier_stayproducts_fetch_seconds_count{outcome="success",supplier="A"} 2   # 성공률·타임아웃 비율의 원료
+supplier_stayproducts_fetch_seconds_bucket{...}                               # 지연 p95/p99 의 원료(히스토그램)
+supplier_stayproducts_availability_total{result="sold_out",supplier="A"} 1    # 가용성 판정 분포
+```
+
+무엇을 왜 계측하는지(outcome 분류, 시도 단위 기록, 미매핑 카운터)와 알람 신호·임계값, 파생 쿼리(PromQL)
+예시는 [docs/MONITORING.md](docs/MONITORING.md)에 있습니다. Mock 의 장애 모드(`/control/{supplier}/mode`)를
+전환해 가며 호출하면 `failure`·`timeout`·`circuit_open` 이 갈려 쌓이는 것을 직접 볼 수 있습니다.
+
 ## 문서
 
 | 위치 | 내용 |

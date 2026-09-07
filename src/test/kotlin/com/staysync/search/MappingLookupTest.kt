@@ -3,7 +3,9 @@ package com.staysync.search
 import com.staysync.domain.model.Property
 import com.staysync.domain.model.RoomType
 import com.staysync.domain.model.Supplier
+import com.staysync.observability.SupplierMetrics
 import com.staysync.supplier.SupplierStayProduct
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
@@ -11,11 +13,18 @@ import java.time.LocalDate
 
 class MappingLookupTest {
 
+    private val meterRegistry = SimpleMeterRegistry()
+
     private val lookup = MappingLookup(
         supplier = Supplier.A,
         propertyByCode = mapOf("A-10023" to Property(id = 10, name = "Riverside Hotel Seoul")),
         roomTypeByKey = mapOf((10L to "DLX-TWN") to RoomType(id = 100, name = "Deluxe Twin", maxOccupancy = 2)),
+        metrics = SupplierMetrics(meterRegistry),
     )
+
+    private fun unmappedCount(level: String): Double =
+        meterRegistry.find(SupplierMetrics.UNMAPPED_COUNTER)
+            .tags("supplier", "A", "level", level).counter()?.count() ?: 0.0
 
     private fun product(propertyCode: String = "A-10023", roomTypeCode: String = "DLX-TWN") = SupplierStayProduct(
         supplierPropertyCode = propertyCode,
@@ -41,13 +50,15 @@ class MappingLookupTest {
     }
 
     @Test
-    fun `매핑에 없는 숙소 코드 - null 로 걸러진다`() {
+    fun `매핑에 없는 숙소 코드 - null 로 걸러지고 미매핑 지표가 오른다`() {
         assertNull(lookup.resolve(product(propertyCode = "A-99999")))
+        assertEquals(1.0, unmappedCount("property"))
     }
 
     @Test
-    fun `매핑에 없는 객실 코드 - null 로 걸러진다`() {
+    fun `매핑에 없는 객실 코드 - null 로 걸러지고 미매핑 지표가 오른다`() {
         assertNull(lookup.resolve(product(roomTypeCode = "NO-SUCH")))
+        assertEquals(1.0, unmappedCount("roomType"))
     }
 
     @Test
@@ -63,6 +74,7 @@ class MappingLookupTest {
                 (1L to "R-401") to RoomType(id = 11, name = "첫째 객실", maxOccupancy = 2),
                 (2L to "R-401") to RoomType(id = 22, name = "둘째 객실", maxOccupancy = 3),
             ),
+            metrics = SupplierMetrics(meterRegistry),
         )
 
         val (property, roomType) = requireNotNull(

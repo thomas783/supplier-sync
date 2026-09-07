@@ -97,7 +97,13 @@ management:
   endpoints:
     web:
       exposure:
-        include: health, info
+        include: health, info, prometheus
+  metrics:
+    distribution:
+      # 백분위 히스토그램 — 응답 타임아웃을 실측 p95/p99 로 조정하기로 한 결정의 전제 (docs/MONITORING.md).
+      # 카디널리티는 공급사 2 × outcome 5 로 작아 비용이 미미하다
+      percentiles-histogram:
+        supplier.stayproducts.fetch: true
 
 logging:
   level:

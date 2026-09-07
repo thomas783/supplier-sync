@@ -4,6 +4,7 @@ import com.staysync.TestcontainersConfiguration
 import com.staysync.domain.model.Supplier
 import com.staysync.domain.repository.PropertyRepository
 import com.staysync.domain.repository.RoomTypeRepository
+import com.staysync.observability.SupplierMetrics
 import com.staysync.resilience.RetryPath
 import com.staysync.resilience.RetryablePredicate
 import com.staysync.resilience.SupplierResilience
@@ -16,6 +17,7 @@ import com.staysync.supplier.SupplierStayProduct
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry
 import io.github.resilience4j.retry.RetryConfig
 import io.github.resilience4j.retry.RetryRegistry
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import jakarta.validation.Validation
 import jakarta.validation.Validator
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -213,6 +215,7 @@ class PropertySyncServiceTest {
                 Supplier.entries.forEach { registry.retry(RetryPath.SYNC.instanceName(it), RetryPath.SYNC.configName) }
             },
             CircuitBreakerRegistry.ofDefaults(),
+            SupplierMetrics(SimpleMeterRegistry()),
         )
     }
 }

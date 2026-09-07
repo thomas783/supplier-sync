@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.test.autoconfigure.actuate.observability.AutoConfigureObservability
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
@@ -31,11 +32,13 @@ import org.springframework.test.context.DynamicPropertySource
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import io.github.resilience4j.circuitbreaker.CircuitBreaker
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry
 import io.github.resilience4j.retry.RetryRegistry
+import io.micrometer.core.instrument.MeterRegistry
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
@@ -50,6 +53,8 @@ import java.util.concurrent.atomic.AtomicReference
 @ActiveProfiles("test")
 @Import(TestcontainersConfiguration::class)
 @AutoConfigureMockMvc
+// 테스트는 기본적으로 지표 내보내기를 끈다 — 프로메테우스 노출까지 검증하므로 명시적으로 켠다
+@AutoConfigureObservability
 class StaySearchIntegrationTest {
 
     @Autowired
@@ -60,6 +65,9 @@ class StaySearchIntegrationTest {
 
     @Autowired
     private lateinit var retryRegistry: RetryRegistry
+
+    @Autowired
+    private lateinit var meterRegistry: MeterRegistry
 
     @BeforeEach
     fun resetSharedState() {
@@ -199,6 +207,28 @@ class StaySearchIntegrationTest {
         // 판별의 클래스 위임까지 확인 — 기본값이면 영구 실패(retryable=false)도 재시도 대상이 되어 버린다
         assertFalse(search.exceptionPredicate.test(SupplierCallException(Supplier.A, "HTTP 401", retryable = false)))
         assertTrue(search.exceptionPredicate.test(SupplierCallException(Supplier.A, "HTTP 503", retryable = true)))
+    }
+
+    @Test
+    fun `지표 - 조회가 공급사·outcome 태그로 기록되고 프로메테우스 포맷으로 노출된다`() {
+        search().andExpect(status().isOk)
+
+        // 어댑터 판정 기반 커스텀 타이머 — B 의 실패(HTTP 200 + resultCode)까지 진실대로 세는 유일한 지표
+        val successA = meterRegistry.find("supplier.stayproducts.fetch")
+            .tags("supplier", "A", "outcome", "success").timer()
+        assertTrue((successA?.count() ?: 0) >= 1)
+
+        // 판정 분포 — 정상 픽스처에서 A 는 가능(Riverside)과 확정 매진(Namsan)이 함께 집계된다
+        val available = meterRegistry.find("supplier.stayproducts.availability")
+            .tags("supplier", "A", "result", "available").counter()
+        val soldOut = meterRegistry.find("supplier.stayproducts.availability")
+            .tags("supplier", "A", "result", "sold_out").counter()
+        assertTrue((available?.count() ?: 0.0) >= 1.0)
+        assertTrue((soldOut?.count() ?: 0.0) >= 1.0)
+
+        mockMvc.perform(get("/actuator/prometheus"))
+            .andExpect(status().isOk)
+            .andExpect(content().string(containsString("supplier_stayproducts_fetch")))
     }
 
     @Test

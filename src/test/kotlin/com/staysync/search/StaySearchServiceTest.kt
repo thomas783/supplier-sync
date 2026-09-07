@@ -7,6 +7,7 @@ import com.staysync.domain.model.RoomType
 import com.staysync.domain.model.Supplier
 import com.staysync.domain.repository.PropertyRepository
 import com.staysync.domain.repository.RoomTypeRepository
+import com.staysync.observability.SupplierMetrics
 import com.staysync.resilience.RetryablePredicate
 import com.staysync.resilience.SupplierResilience
 import com.staysync.supplier.StayProductQuery
@@ -17,6 +18,7 @@ import com.staysync.supplier.SupplierStayProduct
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry
 import io.github.resilience4j.retry.RetryConfig
 import io.github.resilience4j.retry.RetryRegistry
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -225,7 +227,9 @@ class StaySearchServiceTest {
         clients: List<SupplierClient>,
         plans: Map<Supplier, SupplierQueryPlan>,
         resilience: SupplierResilience = resilience(),
-    ) = StaySearchService(clients, FakeMappingQueryService(plans), resilience, SUPPLIER_PROPERTIES)
+    ) = StaySearchService(
+        clients, FakeMappingQueryService(plans), resilience, SupplierMetrics(SimpleMeterRegistry()), SUPPLIER_PROPERTIES,
+    )
 
     // 운영 yml 과 같은 정책(첫 시도 + 재시도 1회, retryable 필터)을 코드로 재현하되 대기는 1ms 로 줄인다.
     // 서킷은 기본 설정(창 100·최소 100회)이라 명시적으로 open 시키지 않는 한 테스트에 개입하지 않는다
@@ -239,12 +243,13 @@ class StaySearchServiceTest {
                     .build(),
             ),
             circuitBreakerRegistry,
+            SupplierMetrics(SimpleMeterRegistry()),
         )
 
     private fun plan(
         supplier: Supplier,
         codes: List<String>,
-        lookup: MappingLookup = MappingLookup(supplier, emptyMap(), emptyMap()),
+        lookup: MappingLookup = MappingLookup(supplier, emptyMap(), emptyMap(), SupplierMetrics(SimpleMeterRegistry())),
     ) = SupplierQueryPlan(supplier, codes, lookup)
 
     /** 조회 계획을 고정값으로 주는 페이크 — 리포지토리는 쓰지 않지만 부모 생성자가 요구해 자리만 채운다. */
@@ -253,6 +258,7 @@ class StaySearchServiceTest {
     ) : MappingQueryService(
         Mockito.mock(PropertyRepository::class.java),
         Mockito.mock(RoomTypeRepository::class.java),
+        SupplierMetrics(SimpleMeterRegistry()),
     ) {
         override fun loadPlan(supplier: Supplier): SupplierQueryPlan? = plans[supplier]
     }
@@ -289,6 +295,7 @@ class StaySearchServiceTest {
             supplier = Supplier.B,
             propertyByCode = mapOf("B77120" to Property(id = 3, name = "Riverside Hotel Seoul")),
             roomTypeByKey = mapOf((3L to "R-401") to RoomType(id = 3, name = "Deluxe Twin Room", maxOccupancy = 2)),
+            metrics = SupplierMetrics(SimpleMeterRegistry()),
         )
 
         private val B_PRODUCT = SupplierStayProduct(
