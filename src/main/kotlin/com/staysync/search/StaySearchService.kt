@@ -114,8 +114,8 @@ class StaySearchService(
     /**
      * 정규화 — 중간 표준 타입을 표준 [StayProduct] 로 조립한다 (docs/ARCHITECTURE.md 의 두 번째 변환).
      * 코드 치환과 미매핑 스킵은 [MappingLookup.resolve] 가, 가용성 판정과 요금 계산은 도메인 정책이
-     * 맡으므로 여기서는 결과를 조합하기만 한다. 미확정도 그대로 담는다 — 응답에서의 제외는 웹 계층의
-     * 노출 정책이다.
+     * 맡으므로 여기서는 결과를 조합하기만 한다. 미확정(judge = null)은 여기서 제외된다 — 표준 모델에
+     * 도달하는 가용성은 언제나 확정 상태다(미매핑 제외와 같은 층위).
      */
     private fun toStayProducts(
         supplier: Supplier,
@@ -127,6 +127,7 @@ class StaySearchService(
         val availability = AvailabilityPolicy.judge(stayDates, product.remainingByDate)
         // 판정 분포 기록 — 보수적 노출 정책이 조용히 빼는 상품의 규모를 정량화한다 (docs/MONITORING.md)
         metrics.recordAvailability(supplier, availability)
+        if (availability == null) return@mapNotNull null
         StayProduct(
             property = property,
             roomType = roomType,

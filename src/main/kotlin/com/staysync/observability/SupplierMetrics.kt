@@ -45,13 +45,13 @@ class SupplierMetrics(
     /**
      * 가용성 판정 분포 집계 — 엄격 판정이 조용히 상품을 응답에서 빼는 구조라, 이 분포가 보수적 노출
      * 정책의 기회비용을 정량화하는 유일한 창이다. `undetermined` 비율 상승은 공급사 재고 데이터 품질
-     * 저하의 조기 신호다.
+     * 저하의 조기 신호다. 미확정은 표준 모델에 없는 부재(null)지만, 관측은 제외되기 전 여기서 잡는다.
      */
-    fun recordAvailability(supplier: Supplier, availability: Availability) {
-        val result = when (availability) {
-            is Availability.Available -> "available"
-            Availability.SoldOut -> "sold_out"
-            Availability.Undetermined -> "undetermined"
+    fun recordAvailability(supplier: Supplier, availability: Availability?) {
+        val result = when {
+            availability == null -> "undetermined"
+            availability.isAvailable -> "available"
+            else -> "sold_out"
         }
         registry.counter(AVAILABILITY_COUNTER, "supplier", supplier.name, "result", result).increment()
     }

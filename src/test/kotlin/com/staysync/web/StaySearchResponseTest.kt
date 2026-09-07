@@ -14,7 +14,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * 웹 투영의 단위 테스트 — 필드 대응(전치 버그 방지)과 가용성 노출 정책을 고정한다.
+ * 웹 투영의 단위 테스트 — 필드 대응(전치 버그 방지)을 고정한다. 미확정 제외는 정규화의
+ * 몫이라 여기 없다(표준 모델로 표현 자체가 불가능) — StaySearchServiceTest 가 고정한다.
  * 숙소/객실 id 를 다른 값(10/100)으로 두어 뒤바뀌면 반드시 실패하게 한다.
  */
 class StaySearchResponseTest {
@@ -31,7 +32,7 @@ class StaySearchResponseTest {
     @Test
     fun `가능 상품 - 표준 모델 네 단위가 필드 그대로 투영된다`() {
         val response = StaySearchResponse.from(
-            StaySearchResult(stays = listOf(product(Availability.Available(2))), errors = emptyList()),
+            StaySearchResult(stays = listOf(product(Availability(availableRooms = 2))), errors = emptyList()),
         )
 
         val item = response.stayProducts.single()
@@ -52,7 +53,7 @@ class StaySearchResponseTest {
     @Test
     fun `확정 매진 - 제외가 아니라 0으로 노출되고 isAvailable 은 false 다`() {
         val response = StaySearchResponse.from(
-            StaySearchResult(stays = listOf(product(Availability.SoldOut)), errors = emptyList()),
+            StaySearchResult(stays = listOf(product(Availability(availableRooms = 0))), errors = emptyList()),
         )
 
         val item = response.stayProducts.single()
@@ -60,15 +61,6 @@ class StaySearchResponseTest {
         assertEquals(0, item.availability.availableRooms)
     }
 
-    @Test
-    fun `미확정 - 응답에서 제외되고 오류도 아니다`() {
-        val response = StaySearchResponse.from(
-            StaySearchResult(stays = listOf(product(Availability.Undetermined)), errors = emptyList()),
-        )
-
-        assertTrue(response.stayProducts.isEmpty())
-        assertTrue(response.errors.isEmpty())
-    }
 
     @Test
     fun `부분 실패 - 공급사 오류가 사유와 함께 그대로 실린다`() {

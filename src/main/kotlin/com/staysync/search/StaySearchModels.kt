@@ -24,8 +24,8 @@ data class StaySearchCriteria(
 /**
  * 통합 검색 결과.
  *
- * @property stays 정규화·병합을 마친 표준 숙박 상품. 미확정([com.staysync.domain.model.Availability.Undetermined])도
- *   포함한다 — 응답에서의 제외는 노출 정책이므로 웹 계층의 몫이다.
+ * @property stays 정규화·병합을 마친 표준 숙박 상품. 미확정은 정규화에서 이미 제외되어 여기 없다 —
+ *   담긴 가용성은 언제나 확정 상태(0 = 확정 매진 포함)다.
  * @property errors 조회에 실패한 공급사와 사유. 비어 있으면 전체 성공.
  */
 data class StaySearchResult(

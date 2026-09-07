@@ -9,11 +9,12 @@ import java.time.LocalDate
  * 체크아웃 전날까지 매일 확보할 수 있어야 하므로, 전 기간 예약 가능 객실 수는 날짜별 잔여 수의
  * **최소값(병목)**이다 (예: 3박 잔여 [3, 1, 5] → 1).
  *
- * 판정은 엄격 정책이다: 공급사 응답이 요청한 숙박일 중 하나라도 누락하면 [Availability.Undetermined]로
- * 판정한다. 재고가 실제로 0인지 아닌지 모를 때 파는 것은 오버부킹 사고로 이어지므로 "확실하지 않으면
- * 팔지 않는다" — 엄격 판정의 실패는 기회 손실(우리 손해)이고 관대 판정의 실패는 오버부킹(고객 피해)이라
- * 비대칭이 명확하다. 다만 매진이라 단정하는 것도 거짓이므로, 확정 매진([Availability.SoldOut])과는
- * 구분해 돌려준다.
+ * 판정은 엄격 정책이다: 공급사 응답이 요청한 숙박일 중 하나라도 누락하면 **미확정 — null** 로 판정한다.
+ * 미확정은 값이 아니라 부재다 — 정규화가 그 상품을 제외하므로(미매핑 제외와 같은 층위) 표준
+ * 모델([Availability])에는 확정 상태만 도달한다. 재고가 실제로 0인지 아닌지 모를 때 파는 것은 오버부킹
+ * 사고로 이어지므로 "확실하지 않으면 팔지 않는다" — 엄격 판정의 실패는 기회 손실(우리 손해)이고 관대
+ * 판정의 실패는 오버부킹(고객 피해)이라 비대칭이 명확하다. 다만 매진이라 단정하는 것도 거짓이므로,
+ * 확정 매진(availableRooms = 0)과 미확정(null)은 구분된다.
  *
  * 입력 전제: 잔여 수는 비음수다 — 음수 잔여는 변환 관문(ConversionGate)이 결함으로 걸러 여기 도달하지
  * 않는다 (docs/QUARANTINE.md). 이 정책이 음수를 따로 다루지 않는 이유이며, 관문의 해당 검사를 없애려면
@@ -22,15 +23,15 @@ import java.time.LocalDate
 object AvailabilityPolicy {
 
     /**
-     * 요청 기간 전체에 대한 가용성을 판정한다.
+     * 요청 기간 전체에 대한 가용성을 판정한다 — 확정이면 [Availability], 미확정이면 null.
      *
      * @param stayDates 숙박일 목록 (체크인일 ~ 체크아웃 전날)
      * @param remainingByDate 공급사가 응답한 날짜별 잔여 객실 수
      */
-    fun judge(stayDates: List<LocalDate>, remainingByDate: Map<LocalDate, Int>): Availability {
-        if (stayDates.isEmpty()) return Availability.Undetermined
+    fun judge(stayDates: List<LocalDate>, remainingByDate: Map<LocalDate, Int>): Availability? {
+        if (stayDates.isEmpty()) return null
         // 엄격: 누락일 = 미확정. 최소값은 요청 숙박일 기준으로만 구한다 — 맵에 기간 밖 날짜가 섞여도 무시
-        val bookableRooms = stayDates.minOf { remainingByDate[it] ?: return Availability.Undetermined }
-        return if (bookableRooms >= 1) Availability.Available(bookableRooms) else Availability.SoldOut
+        val bookableRooms = stayDates.minOf { remainingByDate[it] ?: return null }
+        return Availability(bookableRooms)
     }
 }
