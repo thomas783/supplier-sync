@@ -380,7 +380,7 @@ class StaySearchIntegrationTest {
             registry.add("supplier.b.base-url") { "http://localhost:${serverB.port}" }
             // 무응답 테스트가 기본 5초를 기다리지 않게 줄이되, 전체 스위트 부하(컨테이너 기동 등) 속에서
             // 정상 응답까지 타임아웃으로 오판하지 않을 여유는 남긴다
-            registry.add("supplier.response-timeout-ms") { "2000" }
+            registry.add("supplier.search-response-timeout-ms") { "2000" }
         }
 
         @JvmStatic

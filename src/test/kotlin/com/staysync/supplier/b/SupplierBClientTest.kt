@@ -1,5 +1,6 @@
 package com.staysync.supplier.b
 
+import com.staysync.config.SupplierProperties
 import com.staysync.supplier.StayProductQuery
 import com.staysync.supplier.SupplierCallException
 import com.staysync.support.MockSupplierResponses
@@ -31,6 +32,15 @@ class SupplierBClientTest {
         children = 0,
     )
 
+    private val properties = SupplierProperties(
+        connectTimeoutMs = 1000,
+        searchResponseTimeoutMs = 500,
+        syncResponseTimeoutMs = 3000, // 기본(500ms)과 달리 두어 요청 단위 오버라이드 적용을 검증한다
+        maxConcurrentCalls = 16,
+        a = SupplierProperties.Endpoint(baseUrl = "unused", apiKey = "unused"),
+        b = SupplierProperties.Endpoint(baseUrl = "unused", apiKey = "unused"),
+    )
+
     @BeforeEach
     fun setUp() {
         server = MockWebServer()
@@ -41,7 +51,7 @@ class SupplierBClientTest {
             .defaultHeader("X-Api-Key", "test-key")
             .clientConnector(ReactorClientHttpConnector(httpClient))
             .build()
-        client = SupplierBClient(webClient)
+        client = SupplierBClient(webClient, properties)
     }
 
     @AfterEach
@@ -147,6 +157,23 @@ class SupplierBClientTest {
             client.fetchStayProducts(query).block()
         }
         assertTrue(ex.reason.contains("success without data"))
+    }
+
+    @Test
+    fun `동기화 타임아웃 - 검색용 기본을 넘는 지연도 요청 단위 오버라이드로 기다린다`() {
+        // 클라이언트 기본(500ms)보다 길고 동기화 오버라이드(3초)보다 짧은 지연 — 오버라이드가 조용히
+        // 무시되면(캐스팅 회귀 등) 기본 타임아웃에 잘려 이 테스트가 실패한다
+        server.enqueue(
+            MockResponse()
+                .setHeadersDelay(1200, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .setResponseCode(200)
+                .setBody(MockSupplierResponses.B_PROPERTIES)
+                .addHeader("Content-Type", "application/json"),
+        )
+
+        val properties = client.fetchProperties()
+
+        assertEquals(1, properties.size)
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.staysync.supplier.a
 
+import com.staysync.config.SupplierProperties
 import com.staysync.domain.model.Supplier
 import com.staysync.supplier.toSupplierError
 import com.staysync.supplier.StayProductQuery
@@ -14,6 +15,8 @@ import org.springframework.stereotype.Component
 import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.client.bodyToMono
 import reactor.core.publisher.Mono
+import reactor.netty.http.client.HttpClientRequest
+import java.time.Duration
 import java.time.format.DateTimeFormatter
 
 /**
@@ -26,6 +29,7 @@ import java.time.format.DateTimeFormatter
 @Component
 class SupplierAClient(
     @param:Qualifier("supplierAWebClient") private val webClient: WebClient,
+    private val properties: SupplierProperties,
 ) : SupplierClient {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -35,6 +39,11 @@ class SupplierAClient(
         try {
             webClient.get()
                 .uri(HOTELS_ENDPOINT)
+                // 동기화는 배치라 검색용 기본보다 관대한 응답 타임아웃을 요청 단위로 덮어쓴다 (docs/INTEGRATION.md)
+                .httpRequest { request ->
+                    request.getNativeRequest<HttpClientRequest>()
+                        .responseTimeout(Duration.ofMillis(properties.syncResponseTimeoutMs))
+                }
                 .retrieve()
                 .bodyToMono<SupplierABaseResponse<SupplierAHotel>>()
                 .block()

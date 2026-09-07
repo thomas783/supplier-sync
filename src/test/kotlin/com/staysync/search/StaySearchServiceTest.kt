@@ -278,7 +278,8 @@ class StaySearchServiceTest {
     companion object {
         private val SUPPLIER_PROPERTIES = SupplierProperties(
             connectTimeoutMs = 1000,
-            responseTimeoutMs = 5000,
+            searchResponseTimeoutMs = 5000,
+            syncResponseTimeoutMs = 10000,
             maxConcurrentCalls = 16,
             a = SupplierProperties.Endpoint(baseUrl = "http://localhost", apiKey = "unused"),
             b = SupplierProperties.Endpoint(baseUrl = "http://localhost", apiKey = "unused"),

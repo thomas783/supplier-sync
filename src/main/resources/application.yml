@@ -24,10 +24,13 @@ sync:
 
 supplier:
   # 타임아웃 근거 (docs/INTEGRATION.md): 정상 연결은 수십 ms — 1초 초과 자체가 연결 단계 장애 신호.
-  # 응답 5초는 공급사 응답 분포를 모르는 시점의 관대한 출발값 — 무응답은 여기서 끊겨 부분 실패로
-  # 흡수되고, 지표(p95/p99)가 쌓이면 그때 조인다.
+  # 연결 수립은 경로와 무관해 하나만 둔다
   connect-timeout-ms: 1000
-  response-timeout-ms: 5000
+  # 응답 타임아웃은 경로별 — 검색은 고객이 기다리는 응답이라 빠듯하게, 동기화는 배치라 관대하게.
+  # 검색 5초는 응답 분포를 모르는 시점의 출발값(지표 p95/p99 가 쌓이면 조인다), 동기화 10초는
+  # 목록 payload 가 크고 지연에 둔감한 배치 성격을 반영한 값
+  search-response-timeout-ms: 5000
+  sync-response-timeout-ms: 10000
   # 재고·요금 병렬 조회의 동시 호출 상한 — 청크 수는 숙소 수에 비례해 커지므로 상한이 없으면
   # 공급사에 수백 개의 동시 요청이 몰릴 수 있다 (docs/INTEGRATION.md)
   max-concurrent-calls: 16
