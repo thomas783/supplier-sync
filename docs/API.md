@@ -160,4 +160,11 @@ POST /internal/properties/sync
 
 ### 헬스 체크
 
-`GET /actuator/health` — 기동 확인용. API 문서 자동화와 지표 노출은 해당 기능 논의 때 결정합니다.
+`GET /actuator/health` — 기동 확인용.
+
+### 기계용 명세와 지표
+
+- `GET /v3/api-docs` — 이 문서와 별개로 컨트롤러 시그니처에서 자동 생성되는 OpenAPI 명세.
+  `GET /swagger-ui.html` 에서 브라우저로 열람·호출해 볼 수 있습니다. 이 문서(API.md)는 계약의 의도와
+  근거를, 자동 명세는 기계가 읽는 형태를 담당합니다.
+- `GET /actuator/prometheus` — 공급사별 연동 지표. 설계는 [MONITORING.md](MONITORING.md) 참고.

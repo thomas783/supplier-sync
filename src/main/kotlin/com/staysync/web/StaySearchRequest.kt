@@ -1,6 +1,7 @@
 package com.staysync.web
 
 import com.staysync.search.StaySearchCriteria
+import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.AssertTrue
 import jakarta.validation.constraints.Min
 import jakarta.validation.constraints.NotNull
@@ -20,19 +21,23 @@ import java.time.LocalDate
  * [toCriteria] 가 불변 도메인 입력으로 투영하며 회복된다.
  */
 data class StaySearchRequest(
+    @field:Schema(description = "체크인일 (YYYY-MM-DD)", example = "2026-09-01")
     @field:NotNull
     @field:DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
     var checkIn: LocalDate? = null,
 
+    @field:Schema(description = "체크아웃일 — 숙박일에 포함되지 않으므로 checkIn 보다 뒤여야 한다", example = "2026-09-04")
     @field:NotNull
     @field:DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
     var checkOut: LocalDate? = null,
 
     // 성인 미동반 숙박은 법령·업계 관행상 불가하다는 도메인 규칙
+    @field:Schema(description = "성인 수 — 성인 미동반 숙박은 불가하므로 1 이상", example = "2")
     @field:NotNull
     @field:Min(value = 1, message = "adults는 1 이상이어야 합니다")
     var adults: Int? = null,
 
+    @field:Schema(description = "아동 수", example = "0", defaultValue = "0")
     @field:Min(value = 0, message = "children은 0 이상이어야 합니다")
     var children: Int = 0,
 ) {
