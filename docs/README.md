@@ -15,6 +15,7 @@
 | [API.md](API.md) | 검색 API 계약 — 검증 규칙, 응답 구조, 부분 실패 표현, 오류 포맷 |
 | [INTEGRATION.md](INTEGRATION.md) | 공급사 연동 — 실패 판정 통일, 타임아웃·병렬 정책, 신규 공급사 런북 |
 | [MONITORING.md](MONITORING.md) | 지표 수집과 알람 설계 |
+| [CACHING.md](CACHING.md) | 요금·재고 캐시 전략 — 설계만, 구현은 전환 트리거 발동 시 |
 | [QUARANTINE.md](QUARANTINE.md) | 결함 데이터 격리 — 관문 검증·지표(ConversionGate·quarantined 카운터)는 구현됨, 격리 저장은 구현 예정 |
 | [CURRENCY.md](CURRENCY.md) | 통화·환율 처리 — 설계만, 외화 공급사 도입 시 (환산가·원가·환율 보존) |
 | [MERGE.md](MERGE.md) | 중복 상품 병합 — 설계만, 카탈로그 그룹핑(메타서치 형태) |
