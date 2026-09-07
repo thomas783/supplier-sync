@@ -17,6 +17,7 @@
 | HTTP 클라이언트 | Spring WebClient (Reactor Netty) | Boot 관리 |
 | 영속화 | Spring Data JPA + MySQL | MySQL 8.4 (LTS) |
 | 회복탄력성 | Resilience4j (retry + circuit breaker) | 2.2.0 (BOM 밖 명시 고정) |
+| API 문서 | springdoc-openapi (Swagger UI) | 2.7.0 (BOM 밖 명시 고정) |
 
 ## 선택의 근거
 

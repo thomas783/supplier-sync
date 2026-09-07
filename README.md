@@ -13,8 +13,9 @@
 | 런타임 | JDK 21 (Gradle toolchain 고정) |
 | 웹 모델 | Spring MVC + WebClient — 논블로킹은 외부 병렬 호출 구간에만 |
 | 영속화 | Spring Data JPA + MySQL 8.4 (LTS) — 테스트도 동일 엔진·동일 버전 |
-| 회복탄력성 | Resilience4j (재시도·서킷 도입 시) |
+| 회복탄력성 | Resilience4j — 재시도 + 공급사별 서킷 브레이커 |
 | 지표 | Micrometer + Prometheus 노출 |
+| API 문서 | springdoc-openapi — `/swagger-ui.html` 자동 생성 |
 
 각 선택의 근거와 택하지 않은 대안은 [docs/TECH_STACK.md](docs/TECH_STACK.md)에 있습니다.
 
@@ -74,7 +75,8 @@ GET /api/v1/stays/search?checkIn=2026-09-01&checkOut=2026-09-04&adults=2&childre
 
 날짜와 인원으로 보유 숙소 전체를 여러 공급사에 병렬 조회하고, 정규화·병합한 `stayProducts`와 공급사별 실패
 정보 `errors`를 반환합니다. 계약 상세(검증 규칙, 응답 구조, 오류 포맷)는
-[docs/API.md](docs/API.md)에 있습니다.
+[docs/API.md](docs/API.md)에 있습니다. 실행 중에는 `/swagger-ui.html`에서 자동 생성된
+OpenAPI 문서로 열람·호출해 볼 수 있습니다.
 
 ## 지표 확인
 

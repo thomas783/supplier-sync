@@ -232,6 +232,25 @@ class StaySearchIntegrationTest {
     }
 
     @Test
+    fun `API 문서 - 공개 그룹 명세에 검색 계약이 실린다`() {
+        mockMvc.perform(get("/v3/api-docs/public"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.paths['/api/v1/stays/search'].get").exists())
+            // @ParameterObject 로 요청 객체가 개별 쿼리 파라미터로 펼쳐졌는지
+            .andExpect(jsonPath("$.paths['/api/v1/stays/search'].get.parameters[*].name",
+                containsInAnyOrder("checkIn", "checkOut", "adults", "children")))
+            // 운영 엔드포인트는 공개 그룹에 섞이지 않는다 — 경로 규약의 구분이 문서에도 유지된다
+            .andExpect(jsonPath("$.paths['/internal/properties/sync']").doesNotExist())
+    }
+
+    @Test
+    fun `API 문서 - 운영 그룹 명세에 수동 동기화가 실린다`() {
+        mockMvc.perform(get("/v3/api-docs/internal"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.paths['/internal/properties/sync'].post").exists())
+    }
+
+    @Test
     fun `전 공급사 실패 - 그래도 200 이고 성공분 없이 errors 만 전원 기록된다`() {
         aMode.set("error")
         bMode.set("error")
