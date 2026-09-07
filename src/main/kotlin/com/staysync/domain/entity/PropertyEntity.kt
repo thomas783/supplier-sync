@@ -1,5 +1,6 @@
 package com.staysync.domain.entity
 
+import com.staysync.domain.model.DomainInvariants
 import com.staysync.domain.model.Supplier
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
@@ -71,8 +72,8 @@ class PropertyEntity(
     @PrePersist
     @PreUpdate
     fun validate() {
-        require(supplierPropertyCode.isNotBlank()) { "supplierPropertyCode must not be blank" }
-        require(propertyName.isNotBlank()) { "propertyName must not be blank" }
+        require(DomainInvariants.validRequiredText(supplierPropertyCode)) { "supplierPropertyCode must not be blank" }
+        require(DomainInvariants.validRequiredText(propertyName)) { "propertyName must not be blank" }
     }
 
     init {

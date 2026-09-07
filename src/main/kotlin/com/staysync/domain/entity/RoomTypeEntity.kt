@@ -1,5 +1,6 @@
 package com.staysync.domain.entity
 
+import com.staysync.domain.model.DomainInvariants
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.FetchType
@@ -80,9 +81,9 @@ class RoomTypeEntity(
     @PrePersist
     @PreUpdate
     fun validate() {
-        require(supplierRoomTypeCode.isNotBlank()) { "supplierRoomTypeCode must not be blank" }
-        require(roomTypeName.isNotBlank()) { "roomTypeName must not be blank" }
-        require(maxOccupancy > 0) { "maxOccupancy must be positive: $maxOccupancy" }
+        require(DomainInvariants.validRequiredText(supplierRoomTypeCode)) { "supplierRoomTypeCode must not be blank" }
+        require(DomainInvariants.validRequiredText(roomTypeName)) { "roomTypeName must not be blank" }
+        require(DomainInvariants.validOccupancy(maxOccupancy)) { "maxOccupancy must be positive: $maxOccupancy" }
     }
 
     init {

@@ -31,15 +31,15 @@ data class Price private constructor(
     val currency: String,
 ) {
     init {
-        require(totalAmount >= 0) { "totalAmount must be non-negative: $totalAmount" }
-        require(averageNightlyAmount >= 0) { "averageNightlyAmount must be non-negative: $averageNightlyAmount" }
-        require(currency.isNotBlank()) { "currency must not be blank" }
+        require(DomainInvariants.validAmount(totalAmount)) { "totalAmount must be non-negative: $totalAmount" }
+        require(DomainInvariants.validAmount(averageNightlyAmount)) { "averageNightlyAmount must be non-negative: $averageNightlyAmount" }
+        require(DomainInvariants.validCurrency(currency)) { "currency must not be blank" }
     }
 
     companion object {
         /** 총액과 박수로 평균 1박가(내림)를 계산해 생성한다. */
         fun of(totalAmount: Long, nights: Int, currency: String): Price {
-            require(nights > 0) { "nights must be positive: $nights" }
+            require(DomainInvariants.validNights(nights)) { "nights must be positive: $nights" }
             return Price(
                 totalAmount = totalAmount,
                 averageNightlyAmount = totalAmount / nights,
