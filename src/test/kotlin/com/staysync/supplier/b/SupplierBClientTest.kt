@@ -128,6 +128,29 @@ class SupplierBClientTest {
     }
 
     @Test
+    fun `E429 - resultCode 미러 파싱이 한도 초과로 분류한다 - A의 429와 같은 대우`() {
+        enqueueJson("""{"resultCode":"E429","resultMessage":"TOO_MANY_REQUESTS","data":null}""")
+
+        val ex = assertThrows(SupplierCallException::class.java) {
+            client.fetchStayProducts(query).block()
+        }
+        assertTrue(ex.retryable)
+        assertTrue(ex.rateLimited)
+    }
+
+    @Test
+    fun `미러 형식이 아닌 resultCode 는 상태 추출 불가라 보수적으로 재시도 제외된다`() {
+        // "E" 접두는 있으나 숫자가 아님 → status null → 알 수 없는 실패는 재시도하지 않는다
+        enqueueJson("""{"resultCode":"EFAIL","resultMessage":"UNKNOWN","data":null}""")
+
+        val ex = assertThrows(SupplierCallException::class.java) {
+            client.fetchStayProducts(query).block()
+        }
+        assertEquals(false, ex.retryable)
+        assertEquals(false, ex.rateLimited)
+    }
+
+    @Test
     fun `중복 날짜가 온 항목은 그 항목만 제외된다 - 잔여 수의 임의 선택을 막는 보수 방어`() {
         enqueueJson(
             """

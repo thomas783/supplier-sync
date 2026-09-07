@@ -3,6 +3,7 @@ package com.staysync.supplier
 import com.staysync.domain.model.Supplier
 import io.netty.channel.ConnectTimeoutException
 import io.netty.handler.timeout.ReadTimeoutException
+import org.springframework.core.codec.DecodingException
 import org.springframework.web.reactive.function.client.WebClientResponseException
 import java.time.LocalDate
 import java.util.concurrent.TimeoutException
@@ -57,7 +58,13 @@ data class StayProductQuery(
     val checkOut: LocalDate,
     val adults: Int,
     val children: Int,
-)
+) {
+    /** 요청 숙박일 집합(체크인일 ~ 체크아웃 전날) — 어댑터가 응답을 요청 기간으로 필터링하는 데 쓴다. */
+    fun stayDates(): Set<LocalDate> =
+        generateSequence(checkIn) { it.plusDays(1) }
+            .takeWhile { it.isBefore(checkOut) }
+            .toSet()
+}
 
 /**
  * 공급사 호출 실패. 실패 전달 방식(HTTP 상태 코드 vs 응답 본문 코드 vs 무응답 타임아웃)이 공급사마다
@@ -74,6 +81,8 @@ class SupplierCallException(
     val rateLimited: Boolean = false,
     /** 무응답 계열(연결·응답 타임아웃) — 가장 비싼 실패라 지표에서 별도 outcome 으로 분리한다. */
     val timedOut: Boolean = false,
+    /** 역직렬화(스키마 불일치) 실패 — 공급사 스키마 드리프트의 신호라 일반 실패와 별도 outcome 으로 분리한다. */
+    val decodeError: Boolean = false,
     cause: Throwable? = null,
 ) : RuntimeException("supplier=$supplier reason=$reason", cause)
 
@@ -92,7 +101,10 @@ internal fun toSupplierError(supplier: Supplier, endpoint: String, t: Throwable)
     // 무응답 — 응답 타임아웃(5초)에 끊긴 경우. 일시 장애로 보고 재시도 가능
     isTimeout(t) ->
         SupplierCallException(supplier, "$endpoint timeout (no response)", retryable = true, timedOut = true, cause = t)
-    // 그 외 (연결 실패, 역직렬화 오류 등) — 원인 불명은 보수적으로 재시도 제외
+    // 역직렬화 실패(스키마 불일치) — 다시 받아도 같으므로 재시도 제외. 스키마 드리프트 신호라 별도 표시
+    isDecodeError(t) ->
+        SupplierCallException(supplier, "$endpoint decode failed: ${t.message}", retryable = false, decodeError = true, cause = t)
+    // 그 외 (연결 실패 등) — 원인 불명은 보수적으로 재시도 제외
     else -> SupplierCallException(supplier, "$endpoint call failed: ${t.message}", retryable = false, cause = t)
 }
 
@@ -136,3 +148,10 @@ private fun isTimeout(t: Throwable): Boolean =
     t is ReadTimeoutException || t.cause is ReadTimeoutException ||
         t is ConnectTimeoutException || t.cause is ConnectTimeoutException ||
         t is TimeoutException
+
+/**
+ * 역직렬화 실패 식별 — WebClient 가 본문을 지정 타입으로 디코딩하지 못하면 [DecodingException] 을 던진다.
+ * 원인 체인에 섞여 오는 경우도 있어 cause 까지 본다. [toSupplierError] 안에서만 쓰인다.
+ */
+private fun isDecodeError(t: Throwable): Boolean =
+    t is DecodingException || t.cause is DecodingException

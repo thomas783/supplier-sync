@@ -192,6 +192,56 @@ class SupplierAClientTest {
     }
 
     @Test
+    fun `요청 기간 밖 날짜는 총액과 잔여에서 제외된다 - 총액이 요청 박수와 무관하게 부풀지 않게`() {
+        // query 는 09-01~09-04(요청 숙박일 09-01·02·03). 공급사가 09-04 를 덧붙여 반환해도 무시한다
+        enqueueJson(
+            """
+            {
+              "items": [
+                { "hotelCode": "A-10023", "hotelName": "정상", "roomTypeCode": "DLX-TWN",
+                  "roomTypeName": "Deluxe Twin", "maxOccupancy": 2, "breakfastIncluded": false, "currency": "KRW",
+                  "dailyRates": [
+                    { "date": "2026-09-01", "remainingRooms": 3, "nightlyRate": 100000, "taxAmount": 10000 },
+                    { "date": "2026-09-02", "remainingRooms": 3, "nightlyRate": 100000, "taxAmount": 10000 },
+                    { "date": "2026-09-03", "remainingRooms": 3, "nightlyRate": 100000, "taxAmount": 10000 },
+                    { "date": "2026-09-04", "remainingRooms": 3, "nightlyRate": 999999, "taxAmount": 999999 }
+                  ] }
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        val product = client.fetchStayProducts(query).block()!!.single()
+
+        assertEquals(330000, product.grossTotalAmount) // 09-04 제외한 3일치 (110000 × 3)
+        assertEquals(setOf(LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 2), LocalDate.of(2026, 9, 3)), product.remainingByDate.keys)
+    }
+
+    @Test
+    fun `일자별 음수 요금은 합계가 양수여도 제외된다 - 관문은 합계만 보므로 어댑터가 일자별로 잡는다`() {
+        enqueueJson(
+            """
+            {
+              "items": [
+                { "hotelCode": "A-10044", "hotelName": "상쇄된 음수", "roomTypeCode": "STD-DBL",
+                  "roomTypeName": "Standard Double", "maxOccupancy": 2, "breakfastIncluded": false, "currency": "KRW",
+                  "dailyRates": [
+                    { "date": "2026-09-01", "remainingRooms": 2, "nightlyRate": 200000, "taxAmount": 0 },
+                    { "date": "2026-09-02", "remainingRooms": 2, "nightlyRate": -50000, "taxAmount": 0 },
+                    { "date": "2026-09-03", "remainingRooms": 2, "nightlyRate": 100000, "taxAmount": 0 }
+                  ] }
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        val products = client.fetchStayProducts(query).block()!!
+
+        assertTrue(products.isEmpty()) // 합계 250000 은 양수지만 09-02 가 음수라 제외
+        assertEquals(1.0, quarantinedCount("INVALID_PRICE"))
+    }
+
+    @Test
     fun `숙소 목록 - 어댑터는 결함을 거르지 않고 원시 그대로 통과시킨다 (필터는 저장 경계의 몫)`() {
         // sync 경로의 결함 판정·집계는 PropertyMappingService(ConversionGate.defectOf)의 몫이다
         // (docs/QUARANTINE.md). 어댑터는 형식만 통일하고 계약 밖 레코드도 그대로 넘긴다.

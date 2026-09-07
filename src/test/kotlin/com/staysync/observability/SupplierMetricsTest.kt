@@ -62,6 +62,14 @@ class SupplierMetricsTest {
     }
 
     @Test
+    fun `역직렬화 실패는 스키마 드리프트 신호라 decode_error 로 분리된다`() {
+        recordError(SupplierCallException(Supplier.A, "decode failed", retryable = false, decodeError = true))
+
+        assertEquals(1, timerCount("decode_error"))
+        assertEquals(0, timerCount("failure"))
+    }
+
+    @Test
     fun `미매핑 스킵이 수준별 태그로 집계된다`() {
         metrics.recordUnmappedProperty(Supplier.A)
         metrics.recordUnmappedRoomType(Supplier.A)

@@ -29,14 +29,15 @@ actuator에 내장되어 있어 한계비용이 Prometheus 레지스트리 의�
 ```
 supplier.stayproducts.fetch (Timer, 백분위 히스토그램 활성)
   supplier = A | B
-  outcome  = success | failure | timeout | rate_limited | circuit_open
+  outcome  = success | failure | timeout | rate_limited | circuit_open | decode_error
 ```
 
 - `outcome`은 어댑터가 통일한 공통 예외의 분류에서 유도합니다 — 무응답이면 `timeout`, 한도
   초과(429/`E429`)는 `rate_limited`(429 관측이 대규모 대응의 전환 트리거로 정의되어 있어
   — [INTEGRATION.md](INTEGRATION.md) — `failure`에 묻으면 트리거를 관측할 수 없습니다), 서킷이 차단한
   호출은 `circuit_open`(원격에 나가지 않았어도 셉니다 — 차단은 곧 상품 노출 축소라 빈도 자체가 신호),
-  그 외 실패는 `failure`.
+  응답을 지정 타입으로 디코딩하지 못하면 `decode_error`(공급사 스키마 드리프트의 신호라 일반 실패와
+  분리해 조기 관측), 그 외 실패는 `failure`.
 - **기록 단위는 시도(attempt)입니다** — 계측이 서킷 밖·재시도 안에 위치해 재시도의 각 시도가 개별
   기록됩니다. 재시도 대기 시간이 지연 분포에 섞이지 않아 타임아웃 조정용 p95/p99가 공급사의 실제 응답
   분포를 말하고, 재시도로 복구된 순단도 실패 시도로 남습니다.

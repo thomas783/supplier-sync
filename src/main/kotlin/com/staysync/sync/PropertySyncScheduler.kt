@@ -19,6 +19,15 @@ class PropertySyncScheduler(
     @Scheduled(cron = "\${sync.property-cron}")
     fun scheduledSync() {
         log.info("scheduled property sync")
-        propertySyncService.syncAll()
+        // syncAll 은 실패를 예외가 아니라 공급사별 결과(ok=false)로 흡수하므로, 배치 경로가 결과를
+        // 버리면 전 공급사 실패도 조용히 지나간다 — 실패 공급사를 집계해 error 로 드러낸다.
+        val results = propertySyncService.syncAll()
+        val failed = results.filter { !it.ok }
+        if (failed.isNotEmpty()) {
+            log.error(
+                "scheduled property sync had failures: failed={} total={} suppliers={}",
+                failed.size, results.size, failed.map { it.supplier },
+            )
+        }
     }
 }
