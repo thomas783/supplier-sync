@@ -117,7 +117,7 @@ wire에서 상태가 숫자로 완전히 유도되므로 별도 status 필드는
 
 - `reason`은 실패를 분류한 짧은 문자열이며, 앞에 어느 호출이 실패했는지 엔드포인트가 붙습니다(예:
   `/a/v1/availability HTTP 503`, `/a/v1/availability timeout (no response)`, `/b/api/search resultCode=E503`,
-  `/a/v1/availability decode failed: ...`, 서킷 브레이커가 차단한 경우 `circuit open`, 공급사 실패가 아닌
+  `/a/v1/availability decode failed`, 서킷 브레이커가 차단한 경우 `circuit open`, 공급사 실패가 아닌
   내부 예외는 불투명하게 `internal error`). 공급사 실패는 외부 사실이라 노출하되, 내부 구현 상세(스택
   트레이스 등)는 담지 않습니다.
 - **전 공급사가 실패해도 HTTP는 200**입니다 — `stayProducts: []`에 `errors`가 전원 기록됩니다. 부분과
