@@ -2,6 +2,7 @@ package com.staysync.observability
 
 import com.staysync.domain.model.Availability
 import com.staysync.domain.model.Supplier
+import com.staysync.supplier.DefectReason
 import com.staysync.supplier.SupplierCallException
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException
 import io.micrometer.core.instrument.MeterRegistry
@@ -60,6 +61,16 @@ class SupplierMetrics(
         registry.counter(UNMAPPED_COUNTER, "supplier", supplier.name, "level", level).increment()
     }
 
+    /**
+     * 결함 격리 집계 — 변환 관문([com.staysync.supplier.ConversionGate])이 결함으로 버린 항목을 사유별로
+     * 센다. 검색 경로(admit)와 동기화 경로(defectOf) 양쪽 드롭이 여기 모인다. 미매핑(`unmapped`)과 층위가
+     * 다르다 — 미매핑은 "우리 매핑의 공백", 이건 "공급사 데이터의 결함"이다. (전체 격리 저장은 미구현 —
+     * 카운터만 우선 도입, docs/QUARANTINE.md)
+     */
+    fun recordQuarantined(supplier: Supplier, reason: DefectReason) {
+        registry.counter(QUARANTINED_COUNTER, "supplier", supplier.name, "reason", reason.name).increment()
+    }
+
     private fun record(sample: Timer.Sample, supplier: Supplier, outcome: String) {
         sample.stop(registry.timer(TIMER_NAME, "supplier", supplier.name, "outcome", outcome))
     }
@@ -76,5 +87,6 @@ class SupplierMetrics(
         const val TIMER_NAME = "supplier.stayproducts.fetch"
         const val UNMAPPED_COUNTER = "supplier.stayproducts.unmapped"
         const val AVAILABILITY_COUNTER = "supplier.stayproducts.availability"
+        const val QUARANTINED_COUNTER = "supplier.stayproducts.quarantined"
     }
 }

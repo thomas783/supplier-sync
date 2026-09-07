@@ -2,6 +2,7 @@ package com.staysync.supplier.a
 
 import com.staysync.config.SupplierProperties
 import com.staysync.domain.model.Supplier
+import com.staysync.observability.SupplierMetrics
 import com.staysync.supplier.toSupplierError
 import com.staysync.supplier.ConversionGate
 import com.staysync.supplier.StayProductQuery
@@ -32,6 +33,7 @@ import java.time.format.DateTimeFormatter
 class SupplierAClient(
     @param:Qualifier("supplierAWebClient") private val webClient: WebClient,
     private val properties: SupplierProperties,
+    private val metrics: SupplierMetrics,
 ) : SupplierClient {
     override val supplier = Supplier.A
 
@@ -48,11 +50,7 @@ class SupplierAClient(
                 .bodyToMono<SupplierABaseResponse<SupplierAHotel>>()
                 .block()
                 ?.items
-                ?.mapNotNull { hotel ->
-                    // 결함(null)이면 격리 기록 자리(구현 예정, docs/QUARANTINE.md) — 원시 항목은 어댑터만 안다:
-                    // quarantineRecorder.record(supplier, rawPayload = hotel)
-                    ConversionGate.admit(supplier, hotel.toSupplierProperty())
-                }
+                ?.map { it.toSupplierProperty() }
                 // 본문 없는 200 은 "숙소 0건"이 아니라 계약 위반 — 정상 빈 응답은 items: [] 로 온다
                 ?: throw SupplierCallException(supplier, "$HOTELS_ENDPOINT: empty response")
         } catch (e: Exception) {
@@ -75,9 +73,12 @@ class SupplierAClient(
             .bodyToMono<SupplierABaseResponse<SupplierAAvailabilityItem>>()
             .map { response ->
                 response.items.mapNotNull { item ->
-                    // 결함(null)이면 격리 기록 자리(구현 예정, docs/QUARANTINE.md) — 원시 항목·요청 컨텍스트는 어댑터만 안다:
+                    // 전체 격리 기록 자리(미구현, docs/QUARANTINE.md) — 원시 페이로드 보존은 어댑터만 안다:
                     // quarantineRecorder.record(supplier, rawPayload = item, requestContext = query)
-                    ConversionGate.admit(supplier, rawDates = item.dailyRates.map { it.date }, product = item.toStayProduct())
+                    // 사유별 카운터는 onDefect 로 기록한다 — 검색 경로 결함이 대시보드에 보이게
+                    ConversionGate.admit(supplier, rawDates = item.dailyRates.map { it.date }, product = item.toStayProduct()) {
+                        metrics.recordQuarantined(supplier, it)
+                    }
                 }
             }
             .onErrorMap { toSupplierError(supplier, AVAILABILITY_ENDPOINT, it) }

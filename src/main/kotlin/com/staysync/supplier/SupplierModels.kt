@@ -2,8 +2,6 @@ package com.staysync.supplier
 
 import com.staysync.domain.model.Supplier
 import io.netty.channel.ConnectTimeoutException
-import jakarta.validation.constraints.NotBlank
-import jakarta.validation.constraints.Positive
 import io.netty.handler.timeout.ReadTimeoutException
 import org.springframework.web.reactive.function.client.WebClientResponseException
 import java.time.LocalDate
@@ -19,18 +17,19 @@ import java.util.concurrent.TimeoutException
 
 /**
  * 숙소 목록 조회 결과 (정적 콘텐츠). 요금·재고는 없다.
- * 애노테이션은 공급사 계약의 선언이다 — 동기화가 저장 전에 Validator 로 판정해 계약 밖 레코드를 건너뛴다.
+ * 계약 밖 데이터(빈 이름, 0 이하 정원)의 판정은 저장 직전 [com.staysync.supplier.ConversionGate] —
+ * 곧 DomainInvariants 단일 원천 — 이 맡는다 (docs/QUARANTINE.md).
  */
 data class SupplierProperty(
-    @field:NotBlank val supplierPropertyCode: String,
-    @field:NotBlank val propertyName: String,
+    val supplierPropertyCode: String,
+    val propertyName: String,
     val roomTypes: List<SupplierRoomType>,
 )
 
 data class SupplierRoomType(
-    @field:NotBlank val supplierRoomTypeCode: String,
-    @field:NotBlank val roomTypeName: String,
-    @field:Positive val maxOccupancy: Int,
+    val supplierRoomTypeCode: String,
+    val roomTypeName: String,
+    val maxOccupancy: Int,
 )
 
 /**

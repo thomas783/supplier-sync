@@ -1323,3 +1323,34 @@ README 스택 표의 "재시도·서킷 도입 시" 드리프트도 함께 정�
 
 테스트 15건 추가(총 138건). 문서는 QUARANTINE.md 신설 — 지위는 "관문 검증은 구현됨 · 격리 기록은 구현
 예정"으로 갈라 명시했다.
+
+### 21:10 · 가용성 표준 모델 확정화 · skipped 회귀 일원화 · 결함 격리 지표
+
+세 갈래가 하나의 흐름으로 이어졌다. (사용자 지적) 표준 모델에 미확정(Undetermined)이 전파되는데,
+이건 정규화에서 걸러져야지 여기까지 오면 안 된다 — availableRooms Int 하나만 있으면 된다. 그리고
+Availability.require 가 DomainInvariants 를 호출하지 않고 누락됐다.
+
+- **가용성 재설계**(제안 수용): sealed 3상태 → `data class Availability(availableRooms: Int)` 하나.
+  0 = 확정 매진, isAvailable 은 파생값. 판정(judge)은 `Availability?` 를 돌려주고(미확정 = null),
+  정규화가 그 상품을 제외한다 — 미매핑 제외와 같은 층위라, 표준 모델에는 확정 가용성만 도달한다.
+  require 는 DomainInvariants.validRemaining 으로 단일 원천에 합류(누락 정정). 웹 DTO 의 노출 정책
+  필터가 사라지고 순수 투영만 남았다 — wire 계약은 불변. 지표는 미확정을 null 로 받아 undetermined
+  로 계속 관측한다. 마크다운 7개(API·ARCHITECTURE·DOMAIN_MODEL·MONITORING·README·QUARANTINE·CACHING)
+  의 "3상태" 표기를 "판정 결과 3종, 미확정은 정규화 제외"로 정합화했다.
+- **skipped 회귀**(자동 리뷰 지적, 실재 확인): 이번 라운드 초기에 어댑터 `fetchProperties` 에도
+  `ConversionGate.admit(property)` 를 넣었는데, 이것이 `PropertyMappingService` 의 Bean Validation
+  기반 `skipped` 집계(문서화된 sync API 필드)의 입력을 앞에서 차단해 `skipped` 를 항상 0으로 만드는
+  회귀였다. fake 테스트가 어댑터를 우회해 못 잡았다. (사용자 결정) 관문으로 완전 일원화 — 어댑터의
+  `admit(property)` 를 제거하고, `persistMappings` 가 `ConversionGate.defectOf`(DomainInvariants
+  단일 원천)로 판정·집계하도록 바꿔 Bean Validation 애노테이션을 제거했다. 규칙 정의가 정말로 하나로
+  수렴했고 `skipped` 도 보존된다. QUARANTINE 의 "완전성" 인벤토리에 이 네 번째 지점을 반영했다.
+- **결함 격리 지표**(사용자 질문 → 결정): "API fetch 후 변환 관문에서 걸러진 것들은 모니터링에서
+  어떻게 되나" — 검색 경로 결함은 warn 로그로만 남아 사각지대였다(sync 는 skipped 로 관측됨).
+  (선택지 중 1번) 전체 격리 저장은 미구현으로 두고 `supplier.stayproducts.quarantined`
+  카운터(supplier×reason)만 먼저 도입했다. `ConversionGate.admit` 에 onDefect 콜백을 더해(순수 객체
+  유지) 검색 어댑터가, `defectOf` 분기에서 sync 가 각각 기록한다 — 하나의 카운터가 양쪽 드롭을
+  사유별로 담는다. MONITORING 에 카운터·알람을 추가하고 세 카운터(unmapped·undetermined·quarantined)의
+  층위를 구분했다.
+- 시행착오 — 어댑터 생성자에 SupplierMetrics 가 추가되며 4개 생성 지점(유닛 2 + 통합 2)을 함께 고쳤다.
+
+테스트 15건 추가·수정(총 138건). 가용성 모델 변경은 문서-코드 일치를 위해 마크다운 전수 점검을 동반했다.

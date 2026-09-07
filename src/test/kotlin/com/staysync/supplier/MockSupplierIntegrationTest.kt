@@ -1,5 +1,7 @@
 package com.staysync.supplier
 
+import com.staysync.observability.SupplierMetrics
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import com.staysync.config.SupplierProperties
 import com.staysync.supplier.a.SupplierAClient
 import com.staysync.supplier.b.SupplierBClient
@@ -38,7 +40,7 @@ class MockSupplierIntegrationTest {
 
     @Test
     fun `A - 숙소 목록과 재고 요금이 실행형 Mock 을 통과한다`() {
-        val client = SupplierAClient(webClient(), properties())
+        val client = SupplierAClient(webClient(), properties(), SupplierMetrics(SimpleMeterRegistry()))
 
         val properties = client.fetchProperties()
         assertEquals(2, properties.size)
@@ -50,7 +52,7 @@ class MockSupplierIntegrationTest {
 
     @Test
     fun `B - 숙소 목록과 재고 요금이 실행형 Mock 을 통과한다`() {
-        val client = SupplierBClient(webClient(), properties())
+        val client = SupplierBClient(webClient(), properties(), SupplierMetrics(SimpleMeterRegistry()))
 
         val properties = client.fetchProperties()
         assertEquals("B77120", properties.single().supplierPropertyCode)

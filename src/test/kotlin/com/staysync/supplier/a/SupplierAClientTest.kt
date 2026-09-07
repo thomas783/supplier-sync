@@ -1,5 +1,7 @@
 package com.staysync.supplier.a
 
+import com.staysync.observability.SupplierMetrics
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import com.staysync.config.SupplierProperties
 import com.staysync.supplier.StayProductQuery
 import com.staysync.supplier.SupplierCallException
@@ -23,6 +25,10 @@ class SupplierAClientTest {
 
     private lateinit var server: MockWebServer
     private lateinit var client: SupplierAClient
+    private val registry = SimpleMeterRegistry()
+
+    private fun quarantinedCount(reason: String): Double =
+        registry.find(SupplierMetrics.QUARANTINED_COUNTER).tags("supplier", "A", "reason", reason).counter()?.count() ?: 0.0
 
     private val query = StayProductQuery(
         propertyCodes = listOf("A-10023", "A-10044"),
@@ -51,7 +57,7 @@ class SupplierAClientTest {
             .defaultHeader("X-Api-Key", "test-key")
             .clientConnector(ReactorClientHttpConnector(httpClient))
             .build()
-        client = SupplierAClient(webClient, properties)
+        client = SupplierAClient(webClient, properties, SupplierMetrics(registry))
     }
 
     @AfterEach
@@ -181,19 +187,20 @@ class SupplierAClientTest {
         val products = client.fetchStayProducts(query).block()!!
 
         assertEquals(listOf("A-10023"), products.map { it.supplierPropertyCode })
+        // 검색 경로 결함이 대시보드에 보이도록 사유별 카운터로 집계된다 (docs/MONITORING.md)
+        assertEquals(1.0, quarantinedCount("INVALID_PRICE"))
     }
 
     @Test
-    fun `결함 숙소와 결함 룸타입은 목록 변환에서 제외된다 - 이름 공백 숙소와 정원 0 룸타입`() {
+    fun `숙소 목록 - 어댑터는 결함을 거르지 않고 원시 그대로 통과시킨다 (필터는 저장 경계의 몫)`() {
+        // sync 경로의 결함 판정·집계는 PropertyMappingService(ConversionGate.defectOf)의 몫이다
+        // (docs/QUARANTINE.md). 어댑터는 형식만 통일하고 계약 밖 레코드도 그대로 넘긴다.
         enqueueJson(
             """
             {
               "items": [
                 { "hotelCode": "A-10023", "hotelName": "Riverside Hotel Seoul",
-                  "roomTypes": [
-                    { "roomTypeCode": "DLX-TWN", "roomTypeName": "Deluxe Twin", "maxOccupancy": 2 },
-                    { "roomTypeCode": "BAD-OCC", "roomTypeName": "Broken Room", "maxOccupancy": 0 }
-                  ] },
+                  "roomTypes": [ { "roomTypeCode": "DLX-TWN", "roomTypeName": "Deluxe Twin", "maxOccupancy": 2 } ] },
                 { "hotelCode": "A-10044", "hotelName": " ",
                   "roomTypes": [ { "roomTypeCode": "STD-DBL", "roomTypeName": "Standard Double", "maxOccupancy": 2 } ] }
               ]
@@ -203,8 +210,7 @@ class SupplierAClientTest {
 
         val properties = client.fetchProperties()
 
-        assertEquals(listOf("A-10023"), properties.map { it.supplierPropertyCode })
-        assertEquals(listOf("DLX-TWN"), properties[0].roomTypes.map { it.supplierRoomTypeCode })
+        assertEquals(listOf("A-10023", "A-10044"), properties.map { it.supplierPropertyCode })
     }
 
     @Test

@@ -1,5 +1,7 @@
 package com.staysync.supplier.b
 
+import com.staysync.observability.SupplierMetrics
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import com.staysync.config.SupplierProperties
 import com.staysync.supplier.StayProductQuery
 import com.staysync.supplier.SupplierCallException
@@ -51,7 +53,7 @@ class SupplierBClientTest {
             .defaultHeader("X-Api-Key", "test-key")
             .clientConnector(ReactorClientHttpConnector(httpClient))
             .build()
-        client = SupplierBClient(webClient, properties)
+        client = SupplierBClient(webClient, properties, SupplierMetrics(SimpleMeterRegistry()))
     }
 
     @AfterEach
@@ -176,27 +178,6 @@ class SupplierBClientTest {
         val products = client.fetchStayProducts(query).block()!!
 
         assertEquals(listOf("B77120"), products.map { it.supplierPropertyCode })
-    }
-
-    @Test
-    fun `결함 숙소는 목록 변환에서 제외된다 - 이름 공백 숙소`() {
-        enqueueJson(
-            """
-            {
-              "resultCode": "0000", "resultMessage": "SUCCESS",
-              "data": { "items": [
-                { "propertyId": "B77120", "propertyName": "Riverside Hotel Seoul",
-                  "rooms": [ { "roomId": "R-401", "roomName": "Deluxe Twin Room", "maxOccupancy": 2 } ] },
-                { "propertyId": "B77121", "propertyName": " ",
-                  "rooms": [ { "roomId": "R-402", "roomName": "Suite", "maxOccupancy": 2 } ] }
-              ] }
-            }
-            """.trimIndent(),
-        )
-
-        val properties = client.fetchProperties()
-
-        assertEquals(listOf("B77120"), properties.map { it.supplierPropertyCode })
     }
 
     @Test

@@ -2,6 +2,7 @@ package com.staysync.supplier.b
 
 import com.staysync.config.SupplierProperties
 import com.staysync.domain.model.Supplier
+import com.staysync.observability.SupplierMetrics
 import com.staysync.supplier.supplierErrorOfStatus
 import com.staysync.supplier.toSupplierError
 import com.staysync.supplier.ConversionGate
@@ -34,6 +35,7 @@ import java.time.format.DateTimeFormatter
 class SupplierBClient(
     @param:Qualifier("supplierBWebClient") private val webClient: WebClient,
     private val properties: SupplierProperties,
+    private val metrics: SupplierMetrics,
 ) : SupplierClient {
     override val supplier = Supplier.B
 
@@ -52,11 +54,7 @@ class SupplierBClient(
                 ?: throw SupplierCallException(supplier, "$PROPERTIES_ENDPOINT: empty response")
 
             response.requireSuccessData(PROPERTIES_ENDPOINT)
-                .items.mapNotNull { property ->
-                    // 결함(null)이면 격리 기록 자리(구현 예정, docs/QUARANTINE.md) — 원시 항목은 어댑터만 안다:
-                    // quarantineRecorder.record(supplier, rawPayload = property)
-                    ConversionGate.admit(supplier, property.toSupplierProperty())
-                }
+                .items.map { it.toSupplierProperty() }
         } catch (e: Exception) {
             // 동기 경로의 실패 통일 지점 — 리액티브 경로의 onErrorMap 과 같은 변환기를 쓴다
             throw toSupplierError(supplier, PROPERTIES_ENDPOINT, e)
@@ -77,9 +75,12 @@ class SupplierBClient(
             .bodyToMono<SupplierBBaseResponse<SupplierBSearchData>>()
             .map { response ->
                 response.requireSuccessData(SEARCH_ENDPOINT).items.mapNotNull { item ->
-                    // 결함(null)이면 격리 기록 자리(구현 예정, docs/QUARANTINE.md) — 원시 항목·요청 컨텍스트는 어댑터만 안다:
+                    // 전체 격리 기록 자리(미구현, docs/QUARANTINE.md) — 원시 페이로드 보존은 어댑터만 안다:
                     // quarantineRecorder.record(supplier, rawPayload = item, requestContext = query)
-                    ConversionGate.admit(supplier, rawDates = item.inventory.map { it.date }, product = item.toStayProduct())
+                    // 사유별 카운터는 onDefect 로 기록한다 — 검색 경로 결함이 대시보드에 보이게
+                    ConversionGate.admit(supplier, rawDates = item.inventory.map { it.date }, product = item.toStayProduct()) {
+                        metrics.recordQuarantined(supplier, it)
+                    }
                 }
             }
             .onErrorMap { toSupplierError(supplier, SEARCH_ENDPOINT, it) }

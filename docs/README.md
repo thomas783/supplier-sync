@@ -15,7 +15,7 @@
 | [API.md](API.md) | 검색 API 계약 — 검증 규칙, 응답 구조, 부분 실패 표현, 오류 포맷 |
 | [INTEGRATION.md](INTEGRATION.md) | 공급사 연동 — 실패 판정 통일, 타임아웃·병렬 정책, 신규 공급사 런북 |
 | [MONITORING.md](MONITORING.md) | 지표 수집과 알람 설계 |
-| [QUARANTINE.md](QUARANTINE.md) | 결함 데이터 격리 — 관문 검증(ConversionGate)은 구현됨, 격리 레코드·지표는 구현 예정 |
+| [QUARANTINE.md](QUARANTINE.md) | 결함 데이터 격리 — 관문 검증·지표(ConversionGate·quarantined 카운터)는 구현됨, 격리 저장은 구현 예정 |
 | [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md) | 보류된 결정 모음 — 재시도·서킷, 캐시·확장, 병합, 환율 |
 
 ## 권장 읽기 순서
