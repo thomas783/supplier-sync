@@ -1,6 +1,7 @@
 package com.staysync.sync
 
 import com.staysync.domain.model.Supplier
+import com.staysync.resilience.SupplierResilience
 import com.staysync.supplier.SupplierCallException
 import com.staysync.supplier.SupplierClient
 import org.slf4j.LoggerFactory
@@ -34,6 +35,7 @@ import kotlin.concurrent.withLock
 class PropertySyncService(
     private val clients: List<SupplierClient>,
     private val mappingService: PropertyMappingService,
+    private val resilience: SupplierResilience,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val syncLock = ReentrantLock()
@@ -48,7 +50,8 @@ class PropertySyncService(
     // "항상 리스트 응답" 계약이 유지된다. 단 Error 계열(JVM 치명 상태)은 결과로 포장하지 않는다.
     private fun syncSupplier(client: SupplierClient): SupplierSyncResult =
         runCatching {
-            val properties = client.fetchProperties() // 네트워크 호출 — 트랜잭션 밖
+            // 네트워크 호출 — 트랜잭션 밖. 일시 실패는 재시도로 흡수한다 (배치 성격이라 검색보다 시도가 많다)
+            val properties = resilience.decorateSyncRetry(client.supplier) { client.fetchProperties() }
             mappingService.persistMappings(client.supplier, properties)
         }.fold(
             onSuccess = { counts ->

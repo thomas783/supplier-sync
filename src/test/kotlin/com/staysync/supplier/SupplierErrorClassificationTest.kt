@@ -4,8 +4,12 @@ import com.staysync.domain.model.Supplier
 import io.netty.channel.ConnectTimeoutException
 import io.netty.handler.timeout.ReadTimeoutException
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpStatus
+import org.springframework.web.reactive.function.client.WebClientResponseException
 
 /**
  * 전송 계층 실패 분류([toSupplierError])의 함수 수준 검증.
@@ -41,4 +45,34 @@ class SupplierErrorClassificationTest {
         assertTrue(ex.reason.contains("call failed"))
         assertEquals(false, ex.retryable)
     }
+
+    @Test
+    fun `429 - 재시도 가능하되 한도 초과로 분류된다 - 대기를 길게 가져가는 근거`() {
+        val ex = toSupplierError(Supplier.A, "/a/v1/availability", http(429))
+
+        assertTrue(ex.retryable)
+        assertTrue(ex.rateLimited)
+    }
+
+    @Test
+    fun `503 - 재시도 가능하지만 한도 초과는 아니다`() {
+        val ex = toSupplierError(Supplier.A, "/a/v1/availability", http(503))
+
+        assertTrue(ex.retryable)
+        assertFalse(ex.rateLimited)
+    }
+
+    @Test
+    fun `500 - 일시성의 약속은 없어도 재시도 대상이다 - 인스턴스 순단 회복 기대`() {
+        assertTrue(toSupplierError(Supplier.A, "/a/v1/availability", http(500)).retryable)
+    }
+
+    @Test
+    fun `501 - 결정적 5xx 는 재시도하지 않는다`() {
+        assertFalse(toSupplierError(Supplier.A, "/a/v1/availability", http(501)).retryable)
+    }
+
+    private fun http(status: Int): WebClientResponseException = WebClientResponseException.create(
+        status, HttpStatus.valueOf(status).reasonPhrase, HttpHeaders(), ByteArray(0), null,
+    )
 }

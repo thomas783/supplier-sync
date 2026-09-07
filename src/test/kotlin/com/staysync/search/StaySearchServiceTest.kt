@@ -7,19 +7,26 @@ import com.staysync.domain.model.RoomType
 import com.staysync.domain.model.Supplier
 import com.staysync.domain.repository.PropertyRepository
 import com.staysync.domain.repository.RoomTypeRepository
+import com.staysync.resilience.RetryablePredicate
+import com.staysync.resilience.SupplierResilience
 import com.staysync.supplier.StayProductQuery
 import com.staysync.supplier.SupplierCallException
 import com.staysync.supplier.SupplierClient
 import com.staysync.supplier.SupplierProperty
 import com.staysync.supplier.SupplierStayProduct
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry
+import io.github.resilience4j.retry.RetryConfig
+import io.github.resilience4j.retry.RetryRegistry
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import reactor.core.publisher.Mono
+import java.time.Duration
 import java.time.LocalDate
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * 검색 오케스트레이션의 단위 테스트 — 청킹·정규화 조립·부분 실패 격리·오류 병합처럼 HTTP 없이 검증
@@ -133,6 +140,67 @@ class StaySearchServiceTest {
     }
 
     @Test
+    fun `재시도 - 일시 실패는 한 번 재시도해 복구한다`() {
+        val calls = AtomicInteger()
+        val clientB = FakeSupplierClient(Supplier.B) {
+            if (calls.incrementAndGet() == 1) {
+                Mono.error(SupplierCallException(Supplier.B, "resultCode E503", retryable = true))
+            } else {
+                Mono.just(listOf(B_PRODUCT))
+            }
+        }
+
+        val result = service(listOf(clientB), mapOf(Supplier.B to plan(Supplier.B, listOf("B77120"), B_LOOKUP)))
+            .search(criteria)
+
+        assertEquals(2, clientB.queries.size) // 첫 시도 + 재시도 1회
+        assertEquals(Supplier.B, result.stays.single().supplier)
+        assertTrue(result.errors.isEmpty())
+    }
+
+    @Test
+    fun `재시도 제외 - 영구 실패는 한 번만 호출하고 바로 부분 실패로 남긴다`() {
+        val clientB = FakeSupplierClient(Supplier.B) {
+            Mono.error(SupplierCallException(Supplier.B, "/b/api/search HTTP 401", retryable = false))
+        }
+
+        val result = service(listOf(clientB), mapOf(Supplier.B to plan(Supplier.B, listOf("B77120"), B_LOOKUP)))
+            .search(criteria)
+
+        assertEquals(1, clientB.queries.size) // 다시 보내도 같은 결과라 재시도하지 않는다
+        assertEquals(SupplierError(Supplier.B, "/b/api/search HTTP 401"), result.errors.single())
+    }
+
+    @Test
+    fun `재시도 소진 - 재시도까지 실패하면 마지막 사유가 부분 실패로 남는다`() {
+        val clientB = FakeSupplierClient(Supplier.B) {
+            Mono.error(SupplierCallException(Supplier.B, "resultCode E503", retryable = true))
+        }
+
+        val result = service(listOf(clientB), mapOf(Supplier.B to plan(Supplier.B, listOf("B77120"), B_LOOKUP)))
+            .search(criteria)
+
+        assertEquals(2, clientB.queries.size)
+        assertEquals(SupplierError(Supplier.B, "resultCode E503"), result.errors.single())
+    }
+
+    @Test
+    fun `서킷 open - 원격 호출 없이 즉시 차단되고 circuit open 사유가 남는다`() {
+        val circuitBreakerRegistry = CircuitBreakerRegistry.ofDefaults()
+        circuitBreakerRegistry.circuitBreaker(Supplier.B.name).transitionToOpenState()
+        val clientB = FakeSupplierClient(Supplier.B) { Mono.just(listOf(B_PRODUCT)) }
+
+        val result = service(
+            listOf(clientB),
+            mapOf(Supplier.B to plan(Supplier.B, listOf("B77120"), B_LOOKUP)),
+            resilience(circuitBreakerRegistry),
+        ).search(criteria)
+
+        assertTrue(clientB.queries.isEmpty()) // 차단된 호출은 원격으로 나가지도 않는다
+        assertEquals(SupplierError(Supplier.B, "circuit open"), result.errors.single())
+    }
+
+    @Test
     fun `매핑 없음 - 공급사를 호출하지 않고 빈 결과를 반환한다`() {
         val clientA = FakeSupplierClient(Supplier.A) { Mono.just(emptyList()) }
 
@@ -153,8 +221,25 @@ class StaySearchServiceTest {
         assertTrue(generateSequence(thrown) { it.cause }.any { it is NotImplementedError })
     }
 
-    private fun service(clients: List<SupplierClient>, plans: Map<Supplier, SupplierQueryPlan>) =
-        StaySearchService(clients, FakeMappingQueryService(plans), SUPPLIER_PROPERTIES)
+    private fun service(
+        clients: List<SupplierClient>,
+        plans: Map<Supplier, SupplierQueryPlan>,
+        resilience: SupplierResilience = resilience(),
+    ) = StaySearchService(clients, FakeMappingQueryService(plans), resilience, SUPPLIER_PROPERTIES)
+
+    // 운영 yml 과 같은 정책(첫 시도 + 재시도 1회, retryable 필터)을 코드로 재현하되 대기는 1ms 로 줄인다.
+    // 서킷은 기본 설정(창 100·최소 100회)이라 명시적으로 open 시키지 않는 한 테스트에 개입하지 않는다
+    private fun resilience(circuitBreakerRegistry: CircuitBreakerRegistry = CircuitBreakerRegistry.ofDefaults()) =
+        SupplierResilience(
+            RetryRegistry.of(
+                RetryConfig.custom<Any>()
+                    .maxAttempts(2)
+                    .waitDuration(Duration.ofMillis(1))
+                    .retryOnException(RetryablePredicate())
+                    .build(),
+            ),
+            circuitBreakerRegistry,
+        )
 
     private fun plan(
         supplier: Supplier,
@@ -181,16 +266,20 @@ class StaySearchServiceTest {
 
         override fun fetchProperties(): List<SupplierProperty> = error("검색 테스트에서는 호출되지 않는다")
 
-        override fun fetchStayProducts(query: StayProductQuery): Mono<List<SupplierStayProduct>> {
-            queries += query
-            return outcome()
-        }
+        // 재시도는 같은 Mono 를 재구독한다 — 실제 어댑터(WebClient)처럼 구독마다 호출이 기록되고
+        // 결과가 새로 계산되도록 defer 로 감싼다
+        override fun fetchStayProducts(query: StayProductQuery): Mono<List<SupplierStayProduct>> =
+            Mono.defer {
+                queries += query
+                outcome()
+            }
     }
 
     companion object {
         private val SUPPLIER_PROPERTIES = SupplierProperties(
             connectTimeoutMs = 1000,
-            responseTimeoutMs = 5000,
+            searchResponseTimeoutMs = 5000,
+            syncResponseTimeoutMs = 10000,
             maxConcurrentCalls = 16,
             a = SupplierProperties.Endpoint(baseUrl = "http://localhost", apiKey = "unused"),
             b = SupplierProperties.Endpoint(baseUrl = "http://localhost", apiKey = "unused"),

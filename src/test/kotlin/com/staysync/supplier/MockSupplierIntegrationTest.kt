@@ -1,5 +1,6 @@
 package com.staysync.supplier
 
+import com.staysync.config.SupplierProperties
 import com.staysync.supplier.a.SupplierAClient
 import com.staysync.supplier.b.SupplierBClient
 import mocksupplier.MockSupplierApplication
@@ -37,7 +38,7 @@ class MockSupplierIntegrationTest {
 
     @Test
     fun `A - 숙소 목록과 재고 요금이 실행형 Mock 을 통과한다`() {
-        val client = SupplierAClient(webClient())
+        val client = SupplierAClient(webClient(), properties())
 
         val properties = client.fetchProperties()
         assertEquals(2, properties.size)
@@ -49,7 +50,7 @@ class MockSupplierIntegrationTest {
 
     @Test
     fun `B - 숙소 목록과 재고 요금이 실행형 Mock 을 통과한다`() {
-        val client = SupplierBClient(webClient())
+        val client = SupplierBClient(webClient(), properties())
 
         val properties = client.fetchProperties()
         assertEquals("B77120", properties.single().supplierPropertyCode)
@@ -73,6 +74,15 @@ class MockSupplierIntegrationTest {
         .uri(uri)
         .exchangeToMono { response -> Mono.just(response.statusCode().value()) }
         .block()!!
+
+    private fun properties() = SupplierProperties(
+        connectTimeoutMs = 1000,
+        searchResponseTimeoutMs = 5000,
+        syncResponseTimeoutMs = 5000,
+        maxConcurrentCalls = 16,
+        a = SupplierProperties.Endpoint(baseUrl = "unused", apiKey = "unused"),
+        b = SupplierProperties.Endpoint(baseUrl = "unused", apiKey = "unused"),
+    )
 
     private fun webClient(): WebClient = WebClient.builder()
         .baseUrl("http://localhost:$mockPort")

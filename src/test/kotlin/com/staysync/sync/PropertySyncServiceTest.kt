@@ -4,12 +4,18 @@ import com.staysync.TestcontainersConfiguration
 import com.staysync.domain.model.Supplier
 import com.staysync.domain.repository.PropertyRepository
 import com.staysync.domain.repository.RoomTypeRepository
+import com.staysync.resilience.RetryPath
+import com.staysync.resilience.RetryablePredicate
+import com.staysync.resilience.SupplierResilience
 import com.staysync.supplier.StayProductQuery
 import com.staysync.supplier.SupplierCallException
 import com.staysync.supplier.SupplierClient
 import com.staysync.supplier.SupplierProperty
 import com.staysync.supplier.SupplierRoomType
 import com.staysync.supplier.SupplierStayProduct
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry
+import io.github.resilience4j.retry.RetryConfig
+import io.github.resilience4j.retry.RetryRegistry
 import jakarta.validation.Validation
 import jakarta.validation.Validator
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -24,6 +30,7 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
 import org.springframework.test.context.ActiveProfiles
 import reactor.core.publisher.Mono
+import java.time.Duration
 
 /**
  * 동기화 유스케이스 검증 — 실제 MySQL(Testcontainers) 위에서 멱등성·갱신 반영·부분 실패 격리를 확인한다.
@@ -52,10 +59,14 @@ class PropertySyncServiceTest {
             SupplierProperty("A-1", "리버사이드", listOf(SupplierRoomType("R1", "디럭스", 2))),
         )
         fakeA.failWith = null
+        fakeA.transientFailures = 0
+        fakeA.fetchCount = 0
         fakeB.propertiesToReturn = listOf(
             SupplierProperty("B-1", "남산 스테이", listOf(SupplierRoomType("R1", "스탠다드", 2))),
         )
         fakeB.failWith = null
+        fakeB.transientFailures = 0
+        fakeB.fetchCount = 0
     }
 
     @Test
@@ -103,6 +114,27 @@ class PropertySyncServiceTest {
         // A 는 저장되고 B 는 없다 — 부분 실패가 전체를 무효화하지 않는다
         assertEquals(1, propertyRepository.count())
         assertEquals(Supplier.A, propertyRepository.findAll().single().supplier)
+    }
+
+    @Test
+    fun `일시 실패 - 동기화는 재시도로 복구된다`() {
+        fakeB.transientFailures = 3 // 재시도 예산(총 4회 시도) 안의 실패
+
+        val results = service.syncAll()
+
+        assertTrue(results.single { it.supplier == Supplier.B }.ok)
+        assertEquals(4, fakeB.fetchCount) // 첫 시도 + 재시도 3회
+        assertEquals(1, propertyRepository.findAll().count { it.supplier == Supplier.B })
+    }
+
+    @Test
+    fun `영구 실패 - 재시도 없이 한 번만 호출하고 실패로 남긴다`() {
+        fakeB.failWith = SupplierCallException(Supplier.B, "/b/api/properties HTTP 401", retryable = false)
+
+        val results = service.syncAll()
+
+        assertEquals(false, results.single { it.supplier == Supplier.B }.ok)
+        assertEquals(1, fakeB.fetchCount)
     }
 
     @Test
@@ -166,17 +198,42 @@ class PropertySyncServiceTest {
 
         // @DataJpaTest 슬라이스에는 Validator 자동 구성이 없다 — 본 앱에서는 Boot 가 제공
         @Bean fun validator(): Validator = Validation.buildDefaultValidatorFactory().validator
+
+        // 운영과 같은 시도 횟수·판별을 쓰되 대기만 1ms 로 줄인 재시도 — 실패 시나리오 테스트가 느려지지 않게
+        @Bean fun supplierResilience(): SupplierResilience = SupplierResilience(
+            RetryRegistry.of(
+                mapOf(
+                    RetryPath.SYNC.configName to RetryConfig.custom<Any>()
+                        .maxAttempts(4) // 운영 yml(resilience4j.retry.configs.sync)과 같은 값
+                        .retryOnException(RetryablePredicate())
+                        .waitDuration(Duration.ofMillis(1))
+                        .build(),
+                ),
+            ).also { registry ->
+                Supplier.entries.forEach { registry.retry(RetryPath.SYNC.instanceName(it), RetryPath.SYNC.configName) }
+            },
+            CircuitBreakerRegistry.ofDefaults(),
+        )
     }
 }
 
-/** 테스트 조작이 가능한 공급사 fake — 목록 응답과 실패를 주입한다. */
+/** 테스트 조작이 가능한 공급사 fake — 목록 응답과 실패(영구·일시)를 주입한다. */
 class FakeSupplierClient(
     override val supplier: Supplier,
     var propertiesToReturn: List<SupplierProperty> = emptyList(),
     var failWith: Exception? = null,
+    /** 이 횟수만큼 일시 실패(retryable)를 먼저 던진 뒤 정상 응답한다 — 재시도 복구 검증용. */
+    var transientFailures: Int = 0,
 ) : SupplierClient {
 
+    var fetchCount: Int = 0
+
     override fun fetchProperties(): List<SupplierProperty> {
+        fetchCount++
+        if (transientFailures > 0) {
+            transientFailures--
+            throw SupplierCallException(supplier, "temporarily unavailable", retryable = true)
+        }
         failWith?.let { throw it }
         return propertiesToReturn
     }

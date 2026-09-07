@@ -2,6 +2,8 @@ package com.staysync.search
 
 import com.staysync.config.SupplierProperties
 import com.staysync.domain.model.AvailabilityPolicy
+import com.staysync.resilience.SupplierResilience
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException
 import com.staysync.domain.model.Price
 import com.staysync.domain.model.StayProduct
 import com.staysync.domain.model.Supplier
@@ -27,6 +29,7 @@ import java.time.LocalDate
 class StaySearchService(
     private val clients: List<SupplierClient>,
     private val mappingQueryService: MappingQueryService,
+    private val resilience: SupplierResilience,
     supplierProperties: SupplierProperties,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -73,8 +76,10 @@ class StaySearchService(
         plan.propertyCodes.chunked(MAX_CODES_PER_CALL).map { chunk ->
             // 청크 사이에 달라지는 것은 코드 묶음뿐 — 호출 1건 = 쿼리 1개 = 코드 50개 이하
             val query = StayProductQuery(chunk, criteria.checkIn, criteria.checkOut, criteria.adults, criteria.children)
-            // cold Mono — 여기서는 HTTP 가 나가지 않고, 팬아웃이 구독하는 순간 실행된다
-            client.fetchStayProducts(query)
+            // cold Mono — 여기서는 HTTP 가 나가지 않고, 팬아웃이 구독하는 순간 실행된다.
+            // 재시도·서킷은 원격 호출에만 입힌다 — 뒤의 정규화(map)에서 터지는 내부 예외는 재시도 대상도,
+            // 공급사 실패 창에 기록될 일도 아니기 때문이다
+            resilience.decorate(client.supplier, client.fetchStayProducts(query))
                 // 응답이 도착한 청크만 즉시 정규화 — 전체 응답을 기다리는 장벽이 없다
                 .map<ChunkOutcome> { products ->
                     ChunkOutcome.Success(client.supplier, toStayProducts(client.supplier, products, plan.lookup, stayDates))
@@ -82,14 +87,22 @@ class StaySearchService(
                 // 실패를 값(Failure)으로 바꿔야 flatMap 이 스트림을 죽이지 않는다 — 폭발 반경은 청크 하나.
                 // Exception 만 흡수한다 — Error 계열(JVM 치명 상태)은 부분 실패로 위장시키지 않고 그대로 전파
                 .onErrorResume(Exception::class.java) { e ->
-                    val reason = if (e is SupplierCallException) {
-                        log.warn("stay product chunk failed: supplier={} reason={}", client.supplier, e.reason)
-                        e.reason
-                    } else {
-                        // 공급사 실패가 아닌 내부 예외(불변식 위반 등) — 상세는 로그에만 남기고,
-                        // 공개 reason 에는 내부 구현을 흘리지 않는다 (docs/API.md 의 분류 문자열 규정)
-                        log.error("unexpected failure while processing chunk: supplier={}", client.supplier, e)
-                        "internal error"
+                    val reason = when (e) {
+                        is SupplierCallException -> {
+                            log.warn("stay product chunk failed: supplier={} reason={}", client.supplier, e.reason)
+                            e.reason
+                        }
+                        // 서킷이 차단한 호출 — 원격으로 나가지도 않았으므로 사유를 별도 분류로 남긴다
+                        is CallNotPermittedException -> {
+                            log.warn("stay product chunk blocked: supplier={} reason=circuit open", client.supplier)
+                            "circuit open"
+                        }
+                        else -> {
+                            // 공급사 실패가 아닌 내부 예외(불변식 위반 등) — 상세는 로그에만 남기고,
+                            // 공개 reason 에는 내부 구현을 흘리지 않는다 (docs/API.md 의 분류 문자열 규정)
+                            log.error("unexpected failure while processing chunk: supplier={}", client.supplier, e)
+                            "internal error"
+                        }
                     }
                     // 이미 만들어 둔 값을 Mono 로 포장만 한다 — onErrorResume 은 대체 publisher 를 요구한다
                     Mono.just(ChunkOutcome.Failure(client.supplier, reason))

@@ -71,6 +71,8 @@ class SupplierCallException(
     val supplier: Supplier,
     val reason: String,
     val retryable: Boolean = false,
+    /** 호출 한도 초과(429/E429) — 짧은 재시도는 한도를 더 두드리므로 재시도 대기를 길게 가져간다. */
+    val rateLimited: Boolean = false,
     cause: Throwable? = null,
 ) : RuntimeException("supplier=$supplier reason=$reason", cause)
 
@@ -84,7 +86,7 @@ internal fun toSupplierError(supplier: Supplier, endpoint: String, t: Throwable)
     t is SupplierCallException -> t
     t is WebClientResponseException -> {
         val code = t.statusCode.value()
-        SupplierCallException(supplier, "$endpoint HTTP $code", retryable = isRetryableStatus(code), cause = t)
+        supplierErrorOfStatus(supplier, "$endpoint HTTP $code", code, cause = t)
     }
     // 무응답 — 응답 타임아웃(5초)에 끊긴 경우. 일시 장애로 보고 재시도 가능
     isTimeout(t) ->
@@ -94,14 +96,36 @@ internal fun toSupplierError(supplier: Supplier, endpoint: String, t: Throwable)
 }
 
 /**
- * 상태 코드 기반 재시도 분류 — 유일한 판단 지점.
- * - 5xx (500 내부 오류, 503 일시 장애): 공급사 쪽 일시 문제 → 재시도 가능
- * - 429 (호출 한도 초과): 잠시 뒤 같은 요청이 성공할 수 있다 → 재시도 가능
- * - 그 외 4xx (400 잘못된 요청, 401 인증 실패): 요청 자체의 문제라 다시 보내도 같은 결과 → 재시도 무의미
+ * 상태 코드 기반 분류의 유일한 지점 — 숫자 상태에서 재시도 가능 여부와 한도 초과 여부를 파생해 통일
+ * 예외를 만든다. HTTP 상태 코드뿐 아니라 그것을 미러링하는 B 의 resultCode(E503 → 503)도 같은 규칙을
+ * 쓴다 — 어댑터에는 "자기 실패 표현에서 상태를 추출하는 지식"만 남고, 분류는 여기로 모인다.
  *
- * HTTP 상태 코드뿐 아니라, 그것을 미러링하는 B 의 resultCode(E503 → 503)도 같은 규칙을 쓴다.
+ * 기준은 "같은 요청을 다시 보내면 결과가 달라질 수 있는가"다 (근거 상세는 docs/INTEGRATION.md).
+ * - 503·504: 약속된 일시성 → 재시도
+ * - 500·502: 일시성의 약속은 없지만 실무에선 인스턴스 단위 순단(재시작·커넥션 순단)이 흔하다.
+ *   결정적 오류였을 때의 하방은 1회 제한과 서킷으로 유계라 재시도 기대값이 양수 → 재시도
+ * - 429 (호출 한도 초과): 한도 창 회복 후 성공 가능 → 재시도, 단 대기는 길게(rateLimited)
+ * - 501 같은 결정적 5xx, 그 외 4xx(400 잘못된 요청, 401 인증 실패): 다시 보내도 같은 결과 → 제외
+ * - 상태를 추출할 수 없으면(null — 미러 형식이 아닌 알 수 없는 코드 등) 보수적으로 제외
+ *
+ * 502·504는 공급사 계약 문서(400·401·429·500·503)에 없지만, 공급사 앞단 인프라(로드밸런서·게이트웨이)가
+ * 만들어내는 전송 경로의 코드라 포함한다 — 계약에 없는 무응답 타임아웃을 다루는 것과 같은 층위다.
  */
-internal fun isRetryableStatus(status: Int): Boolean = status >= 500 || status == 429
+internal fun supplierErrorOfStatus(
+    supplier: Supplier,
+    reason: String,
+    status: Int?,
+    cause: Throwable? = null,
+): SupplierCallException = SupplierCallException(
+    supplier, reason,
+    retryable = status != null && isRetryableStatus(status),
+    rateLimited = status == 429,
+    cause = cause,
+)
+
+private val RETRYABLE_STATUSES = setOf(429, 500, 502, 503, 504)
+
+private fun isRetryableStatus(status: Int): Boolean = status in RETRYABLE_STATUSES
 
 /**
  * 무응답 계열 예외 식별 — 응답 타임아웃과 연결 타임아웃 모두. [toSupplierError] 안에서만 쓰인다.

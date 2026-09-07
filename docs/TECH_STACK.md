@@ -16,7 +16,7 @@
 | 웹 | Spring MVC (Tomcat) | Boot 관리 |
 | HTTP 클라이언트 | Spring WebClient (Reactor Netty) | Boot 관리 |
 | 영속화 | Spring Data JPA + MySQL | MySQL 8.4 (LTS) |
-| 회복탄력성 | Resilience4j (retry + circuit breaker) | 도입 시 명시 고정 |
+| 회복탄력성 | Resilience4j (retry + circuit breaker) | 2.2.0 (BOM 밖 명시 고정) |
 
 ## 선택의 근거
 
@@ -93,7 +93,7 @@ SQL 방언(dialect)과 제약 동작이 실DB와 달라질 수 있다는 점을 
 결합해야 합니다. 필요한 능력 세 가지 — 일시적 실패만 골라 하는 재시도, 반복 실패하는 공급사를 끊는 공급사별
 서킷 브레이커, 동작이 보이게 하는 지표 연동 — 를 기준으로 비교했을 때, Resilience4j는 셋을 전부 충족하는
 유일한 성숙 선택지였습니다. Mono 체인에 그대로 끼워 넣는 전용 연산자를 제공하고, 설정을 yml로 외부화할 수
-있으며, Micrometer 지표가 자동 등록됩니다. 버전은 BOM 관리 밖이므로 도입 시 명시적으로 고정합니다.
+있으며, Micrometer 지표가 자동 등록됩니다. 버전은 BOM 관리 밖이므로 명시적으로 고정합니다(2.2.0).
 
 Spring Retry는 블로킹 메서드 대상 AOP라 리액티브 구간에 맞지 않아 배제했고, Reactor 내장 `retryWhen`
 최소주의(서킷은 나중에)는 공급사 장애가 일상인 도메인 특성상 서킷의 가치가 분명하고 나중에 도입하면 재시도
