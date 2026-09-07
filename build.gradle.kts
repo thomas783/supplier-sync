@@ -35,6 +35,10 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-validation")
     // 운영 지표 (헬스체크 등)
     implementation("org.springframework.boot:spring-boot-starter-actuator")
+    // 회복탄력성 — 재시도 + 공급사별 서킷 브레이커 (docs/TECH_STACK.md). BOM 관리 밖이라 명시 고정
+    implementation("io.github.resilience4j:resilience4j-spring-boot3:2.2.0")
+    // Mono 체인에 끼워 넣는 전용 연산자 (RetryOperator / CircuitBreakerOperator)
+    implementation("io.github.resilience4j:resilience4j-reactor:2.2.0")
 
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
     implementation("org.jetbrains.kotlin:kotlin-reflect")

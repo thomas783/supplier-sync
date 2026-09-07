@@ -39,6 +39,54 @@ supplier:
     base-url: http://localhost:9090
     api-key: mock-api-key
 
+resilience4j:
+  retry:
+    configs:
+      search:
+        # 검색: 고객이 기다리는 응답이라 첫 시도 + 재시도 1회 — 지연 예산이 곧 재시도 예산
+        max-attempts: 2
+        # 일시적 실패(타임아웃·5xx·429·공급사 내부오류)만 재시도 — 잘못된 요청·인증 실패는 재시도 무의미
+        retry-exception-predicate: com.staysync.resilience.RetryablePredicate
+        # 대기 산정 — 실패 종류별 차등(일시 오류 200ms / 한도 초과 1s)에 지수 백오프 + 지터.
+        # 스칼라 wait-duration 으로 표현할 수 없는 규칙이라 판별과 같은 클래스 위임 방식을 쓴다
+        interval-bi-function: com.staysync.resilience.SupplierRetryIntervalBiFunction
+      sync:
+        # 동기화: 사용자 응답이 아닌 배치라 지연에 둔감 — 재시도 3회로 복구 확률을 높인다
+        max-attempts: 4
+        retry-exception-predicate: com.staysync.resilience.RetryablePredicate
+        interval-bi-function: com.staysync.resilience.SupplierRetryIntervalBiFunction
+    instances:
+      A-search:
+        base-config: search
+      B-search:
+        base-config: search
+      A-sync:
+        base-config: sync
+      B-sync:
+        base-config: sync
+  circuitbreaker:
+    configs:
+      default:
+        # 공급사별 최근 10회 호출 중 실패율 50% 이상이면 open — 청크 수가 적은 현 규모에서
+        # 장애가 검색 몇 건 안에 감지되도록 창을 작게 잡는다. 값 조정은 지표가 쌓인 뒤에 한다
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        # open 10초 — 관대한 응답 타임아웃(5초)의 반복 지불을 끊되, 일시 장애면 곧 복구 기회를 준다
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        # 느린 호출도 병든 연동이다 — 검색 응답은 가장 느린 청크에 끌려가므로, 타임아웃(5초) 미만이라도
+        # 만성적으로 2초를 넘기면 창에 센다. 실패(50%)보다 문턱이 높은 80%인 이유: 느린 호출은 그래도
+        # 결과를 주므로, 끊으려면 만성이라는 더 강한 증거를 요구한다. 값은 출발값 — 지표 후 조정
+        slow-call-duration-threshold: 2s
+        slow-call-rate-threshold: 80
+    instances:
+      A:
+        base-config: default
+      B:
+        base-config: default
+
 server:
   port: 8080
 

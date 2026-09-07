@@ -1,6 +1,9 @@
 package com.staysync.search
 
 import com.staysync.TestcontainersConfiguration
+import com.staysync.domain.model.Supplier
+import com.staysync.resilience.RetryPath
+import com.staysync.supplier.SupplierCallException
 import com.staysync.support.MockSupplierResponses
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
@@ -13,6 +16,9 @@ import org.hamcrest.Matchers.containsString
 import org.hamcrest.Matchers.everyItem
 import org.hamcrest.Matchers.`is`
 import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -27,14 +33,18 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import io.github.resilience4j.circuitbreaker.CircuitBreaker
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry
+import io.github.resilience4j.retry.RetryRegistry
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
 /**
  * 통합 검색의 전체 흐름 테스트 — 기동 시 매핑 동기화 → 병렬 조회 → 정규화 → 병합 → 웹 투영을
  * 실제 HTTP 왕복(공급사별 MockWebServer)과 실제 DB(Testcontainers MySQL)로 검증한다.
  *
- * 공급사별 재고·요금 응답 모드(normal/error/no-response)를 토글해 부분 실패 견고성을 검증한다.
- * 숙소 목록은 항상 정상 응답하므로 매핑은 기동 시 1회 동기화로 채워진다.
+ * 공급사별 재고·요금 응답 모드(normal/error/no-response/flaky)를 토글해 부분 실패·재시도·서킷 견고성을
+ * 검증한다. 숙소 목록은 항상 정상 응답하므로 매핑은 기동 시 1회 동기화로 채워진다.
  */
 @SpringBootTest
 @ActiveProfiles("test")
@@ -45,10 +55,21 @@ class StaySearchIntegrationTest {
     @Autowired
     private lateinit var mockMvc: MockMvc
 
+    @Autowired
+    private lateinit var circuitBreakerRegistry: CircuitBreakerRegistry
+
+    @Autowired
+    private lateinit var retryRegistry: RetryRegistry
+
     @BeforeEach
-    fun resetModes() {
+    fun resetSharedState() {
         aMode.set("normal")
         bMode.set("normal")
+        aFlakyRemaining.set(0)
+        bFlakyRemaining.set(0)
+        // 서킷의 실패 창은 테스트 사이에 새어 나가는 공유 상태다 — 반드시 초기화한다
+        circuitBreakerRegistry.circuitBreaker("A").reset()
+        circuitBreakerRegistry.circuitBreaker("B").reset()
     }
 
     private fun search(checkIn: String = "2026-09-01", checkOut: String = "2026-09-04") = mockMvc.perform(
@@ -114,6 +135,70 @@ class StaySearchIntegrationTest {
             .andExpect(jsonPath("$.stayProducts[0].supplier").value("B"))
             .andExpect(jsonPath("$.errors[0].supplier").value("A"))
             .andExpect(jsonPath("$.errors[0].reason", containsString("timeout")))
+    }
+
+    @Test
+    fun `재시도 복구 - A 가 한 번 503 을 주고 성공하면 결과가 온전하다`() {
+        aMode.set("flaky")
+        aFlakyRemaining.set(1) // 첫 시도 503 → 재시도 1회로 복구
+
+        search()
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.stayProducts.length()").value(3))
+            .andExpect(jsonPath("$.errors.length()").value(0))
+    }
+
+    @Test
+    fun `재시도 복구 - B 의 resultCode 실패도 재시도 대상이다`() {
+        // B 는 HTTP 200 으로 실패를 알리므로, 어댑터의 통일 분류(retryable)가 재시도로 이어지는지 확인한다
+        bMode.set("flaky")
+        bFlakyRemaining.set(1)
+
+        search()
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.stayProducts.length()").value(3))
+            .andExpect(jsonPath("$.errors.length()").value(0))
+    }
+
+    @Test
+    fun `서킷 - 반복 실패하면 열리고 이후 호출은 원격 없이 즉시 차단된다`() {
+        aMode.set("error")
+
+        // 실패 창(최소 10회)을 채운다 — 검색 1건당 A 청크 1개 × (첫 시도 + 재시도) = 기록 2회
+        repeat(5) { search().andExpect(status().isOk) }
+        assertEquals(CircuitBreaker.State.OPEN, circuitBreakerRegistry.circuitBreaker("A").state)
+
+        // open 이후의 검색: A 는 호출조차 되지 않고 즉시 부분 실패, B 결과는 그대로 내려간다
+        search()
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.stayProducts.length()").value(1))
+            .andExpect(jsonPath("$.stayProducts[0].supplier").value("B"))
+            .andExpect(jsonPath("$.errors[0].supplier").value("A"))
+            .andExpect(jsonPath("$.errors[0].reason").value("circuit open"))
+    }
+
+    @Test
+    fun `서킷 설정 - yml 값이 공급사 인스턴스에 실제로 바인딩된다`() {
+        // yml 의 relaxed binding 은 오타 난 키를 조용히 버린다 — 핵심 값의 바인딩을 고정해 드리프트를 막는다
+        val config = circuitBreakerRegistry.circuitBreaker("A").circuitBreakerConfig
+
+        assertEquals(10, config.slidingWindowSize)
+        assertEquals(50f, config.failureRateThreshold)
+        assertEquals(java.time.Duration.ofSeconds(2), config.slowCallDurationThreshold)
+        assertEquals(80f, config.slowCallRateThreshold)
+    }
+
+    @Test
+    fun `재시도 설정 - yml 값이 경로별 인스턴스에 실제로 바인딩된다`() {
+        // 서킷 설정 테스트와 같은 취지 — 바인딩이 조용히 실패하면 기본값(3회·모든 예외 재시도)이 쓰인다
+        val search = retryRegistry.retry(RetryPath.SEARCH.instanceName(Supplier.A)).retryConfig
+        val sync = retryRegistry.retry(RetryPath.SYNC.instanceName(Supplier.A)).retryConfig
+
+        assertEquals(2, search.maxAttempts)
+        assertEquals(4, sync.maxAttempts)
+        // 판별의 클래스 위임까지 확인 — 기본값이면 영구 실패(retryable=false)도 재시도 대상이 되어 버린다
+        assertFalse(search.exceptionPredicate.test(SupplierCallException(Supplier.A, "HTTP 401", retryable = false)))
+        assertTrue(search.exceptionPredicate.test(SupplierCallException(Supplier.A, "HTTP 503", retryable = true)))
     }
 
     @Test
@@ -237,6 +322,8 @@ class StaySearchIntegrationTest {
         private val serverB = MockWebServer()
         private val aMode = AtomicReference("normal")
         private val bMode = AtomicReference("normal")
+        private val aFlakyRemaining = AtomicInteger(0)
+        private val bFlakyRemaining = AtomicInteger(0)
 
         private fun json(body: String, code: Int = 200) =
             MockResponse().setResponseCode(code).setBody(body).addHeader("Content-Type", "application/json")
@@ -248,6 +335,7 @@ class StaySearchIntegrationTest {
             stayProductsBody: String,
             errorResponse: () -> MockResponse,
             mode: AtomicReference<String>,
+            flakyRemaining: AtomicInteger,
         ) = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 val path = request.path ?: ""
@@ -256,6 +344,8 @@ class StaySearchIntegrationTest {
                     path.startsWith(stayProductsPath) -> when (mode.get()) {
                         "error" -> errorResponse()
                         "no-response" -> MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE)
+                        // flaky: 남은 횟수만큼 실패한 뒤 정상으로 돌아온다 — 재시도 복구 검증용
+                        "flaky" -> if (flakyRemaining.getAndDecrement() > 0) errorResponse() else json(stayProductsBody)
                         else -> json(stayProductsBody)
                     }
                     else -> MockResponse().setResponseCode(404)
@@ -273,6 +363,7 @@ class StaySearchIntegrationTest {
                 stayProductsBody = MockSupplierResponses.A_AVAILABILITY,
                 errorResponse = { json(MockSupplierResponses.A_ERROR, code = 503) }, // A 는 HTTP 상태로 실패
                 mode = aMode,
+                flakyRemaining = aFlakyRemaining,
             )
             serverB.dispatcher = supplierDispatcher(
                 propertiesPath = "/b/api/properties",
@@ -281,6 +372,7 @@ class StaySearchIntegrationTest {
                 stayProductsBody = MockSupplierResponses.B_SEARCH,
                 errorResponse = { json(MockSupplierResponses.B_ERROR) }, // B 는 HTTP 200 + resultCode 로 실패
                 mode = bMode,
+                flakyRemaining = bFlakyRemaining,
             )
             serverA.start()
             serverB.start()
