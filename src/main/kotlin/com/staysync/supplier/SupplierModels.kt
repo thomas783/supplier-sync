@@ -73,6 +73,8 @@ class SupplierCallException(
     val retryable: Boolean = false,
     /** 호출 한도 초과(429/E429) — 짧은 재시도는 한도를 더 두드리므로 재시도 대기를 길게 가져간다. */
     val rateLimited: Boolean = false,
+    /** 무응답 계열(연결·응답 타임아웃) — 가장 비싼 실패라 지표에서 별도 outcome 으로 분리한다. */
+    val timedOut: Boolean = false,
     cause: Throwable? = null,
 ) : RuntimeException("supplier=$supplier reason=$reason", cause)
 
@@ -90,7 +92,7 @@ internal fun toSupplierError(supplier: Supplier, endpoint: String, t: Throwable)
     }
     // 무응답 — 응답 타임아웃(5초)에 끊긴 경우. 일시 장애로 보고 재시도 가능
     isTimeout(t) ->
-        SupplierCallException(supplier, "$endpoint timeout (no response)", retryable = true, cause = t)
+        SupplierCallException(supplier, "$endpoint timeout (no response)", retryable = true, timedOut = true, cause = t)
     // 그 외 (연결 실패, 역직렬화 오류 등) — 원인 불명은 보수적으로 재시도 제외
     else -> SupplierCallException(supplier, "$endpoint call failed: ${t.message}", retryable = false, cause = t)
 }

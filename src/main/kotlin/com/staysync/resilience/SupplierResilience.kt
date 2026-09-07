@@ -1,6 +1,7 @@
 package com.staysync.resilience
 
 import com.staysync.domain.model.Supplier
+import com.staysync.observability.SupplierMetrics
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry
 import io.github.resilience4j.reactor.circuitbreaker.operator.CircuitBreakerOperator
 import io.github.resilience4j.reactor.retry.RetryOperator
@@ -9,23 +10,26 @@ import org.springframework.stereotype.Component
 import reactor.core.publisher.Mono
 
 /**
- * 공급사 호출에 재시도·서킷 브레이커를 입힌다 (정책과 근거는 docs/INTEGRATION.md).
+ * 공급사 호출에 재시도·서킷 브레이커·계측을 입힌다 (정책과 근거는 docs/INTEGRATION.md, docs/MONITORING.md).
  * 인스턴스는 공급사별(A/B)로 분리되어 한 공급사의 장애가 다른 공급사의 차단·재시도 판단에 섞이지 않는다.
  *
- * 검색(재고·요금) 경로의 적용 순서 — CircuitBreaker(안쪽) → Retry(바깥쪽): 재시도 각 시도가 서킷의
- * 실패 창에 기록되고, 서킷이 open 이면 첫 시도가 즉시 차단되어 반복 실패하는 공급사에 부하를 더 주지
- * 않는다. (재시도 판별이 CallNotPermittedException 을 제외하므로 차단된 호출을 다시 두드리지도 않는다)
+ * 검색(재고·요금) 경로의 적용 순서 — CircuitBreaker(안쪽) → Metrics → Retry(바깥쪽):
+ * - 재시도 각 시도가 서킷의 실패 창에 기록되고, 서킷이 open 이면 첫 시도가 즉시 차단되어 반복 실패하는
+ *   공급사에 부하를 더 주지 않는다. (재시도 판별이 CallNotPermittedException 을 제외하므로 차단된
+ *   호출을 다시 두드리지도 않는다)
+ * - 계측이 서킷 밖·재시도 안에 있어 각 시도가 개별 기록되고(재시도 대기가 지연 분포에 안 섞임),
+ *   차단된 시도도 circuit_open 으로 잡힌다.
  */
 @Component
 class SupplierResilience(
     private val retryRegistry: RetryRegistry,
     private val circuitBreakerRegistry: CircuitBreakerRegistry,
+    private val metrics: SupplierMetrics,
 ) {
     fun <T> decorate(supplier: Supplier, mono: Mono<T>): Mono<T> {
         val retry = retryRegistry.retry(RetryPath.SEARCH.instanceName(supplier))
         val circuitBreaker = circuitBreakerRegistry.circuitBreaker(supplier.name)
-        return mono
-            .transformDeferred(CircuitBreakerOperator.of(circuitBreaker))
+        return metrics.instrument(supplier, mono.transformDeferred(CircuitBreakerOperator.of(circuitBreaker)))
             .transformDeferred(RetryOperator.of(retry))
     }
 

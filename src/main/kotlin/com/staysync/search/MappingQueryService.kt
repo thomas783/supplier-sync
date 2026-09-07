@@ -5,6 +5,7 @@ import com.staysync.domain.model.RoomType
 import com.staysync.domain.model.Supplier
 import com.staysync.domain.repository.PropertyRepository
 import com.staysync.domain.repository.RoomTypeRepository
+import com.staysync.observability.SupplierMetrics
 import com.staysync.supplier.SupplierStayProduct
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -23,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional
 class MappingQueryService(
     private val propertyRepository: PropertyRepository,
     private val roomTypeRepository: RoomTypeRepository,
+    private val metrics: SupplierMetrics,
 ) {
 
     @Transactional(readOnly = true)
@@ -48,7 +50,7 @@ class MappingQueryService(
         return SupplierQueryPlan(
             supplier = supplier,
             propertyCodes = properties.map { it.supplierPropertyCode },
-            lookup = MappingLookup(supplier, propertyByCode, roomTypeByKey),
+            lookup = MappingLookup(supplier, propertyByCode, roomTypeByKey, metrics),
         )
     }
 }
@@ -68,6 +70,7 @@ class MappingLookup(
     private val supplier: Supplier,
     private val propertyByCode: Map<String, Property>,
     private val roomTypeByKey: Map<Pair<Long, String>, RoomType>,
+    private val metrics: SupplierMetrics,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -80,6 +83,7 @@ class MappingLookup(
     fun resolve(product: SupplierStayProduct): Pair<Property, RoomType>? {
         val property = propertyByCode[product.supplierPropertyCode] ?: run {
             log.warn("skipping unmapped property: supplier={} code={}", supplier, product.supplierPropertyCode)
+            metrics.recordUnmappedProperty(supplier) // 오르면 동기화가 밀렸다는 신호 (docs/MONITORING.md)
             return null
         }
         val roomType = roomTypeByKey[property.id to product.supplierRoomTypeCode] ?: run {
@@ -87,6 +91,7 @@ class MappingLookup(
                 "skipping unmapped roomType: supplier={} propertyId={} code={}",
                 supplier, property.id, product.supplierRoomTypeCode,
             )
+            metrics.recordUnmappedRoomType(supplier)
             return null
         }
         return property to roomType

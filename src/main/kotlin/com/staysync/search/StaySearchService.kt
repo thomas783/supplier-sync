@@ -7,6 +7,7 @@ import io.github.resilience4j.circuitbreaker.CallNotPermittedException
 import com.staysync.domain.model.Price
 import com.staysync.domain.model.StayProduct
 import com.staysync.domain.model.Supplier
+import com.staysync.observability.SupplierMetrics
 import com.staysync.supplier.StayProductQuery
 import com.staysync.supplier.SupplierCallException
 import com.staysync.supplier.SupplierClient
@@ -30,6 +31,7 @@ class StaySearchService(
     private val clients: List<SupplierClient>,
     private val mappingQueryService: MappingQueryService,
     private val resilience: SupplierResilience,
+    private val metrics: SupplierMetrics,
     supplierProperties: SupplierProperties,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -122,11 +124,14 @@ class StaySearchService(
         stayDates: List<LocalDate>,
     ): List<StayProduct> = products.mapNotNull { product ->
         val (property, roomType) = lookup.resolve(product) ?: return@mapNotNull null
+        val availability = AvailabilityPolicy.judge(stayDates, product.remainingByDate)
+        // 판정 분포 기록 — 보수적 노출 정책이 조용히 빼는 상품의 규모를 정량화한다 (docs/MONITORING.md)
+        metrics.recordAvailability(supplier, availability)
         StayProduct(
             property = property,
             roomType = roomType,
             breakfastIncluded = product.breakfastIncluded,
-            availability = AvailabilityPolicy.judge(stayDates, product.remainingByDate),
+            availability = availability,
             supplier = supplier,
             price = Price.of(
                 totalAmount = product.grossTotalAmount,

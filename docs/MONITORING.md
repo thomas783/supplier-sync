@@ -16,6 +16,10 @@ actuator에 내장되어 있어 한계비용이 Prometheus 레지스트리 의�
 검토했다가 택하지 않은 것 — actuator 기본 metrics만(순간값 조회용이라 시계열·알람으로 이어지지 않음), 로그
 기반 집계(비율·분포 계산을 로그 파이프라인에 의존하는 우회로), 외부 APM(이 규모에 과함).
 
+노출 보안: 현재 `/actuator/prometheus`는 서비스 포트(8080)에 그대로 열립니다. 실운영이라면 management
+포트 분리(`management.server.port`)와 망 수준 접근 제한이 원칙이지만, 인증·인프라가 범위 밖인 현
+구성에서는 이 사실의 기록으로 갈음합니다.
+
 ## 계측 설계
 
 ### 핵심 타이머 — `supplier.stayproducts.fetch`
@@ -25,18 +29,53 @@ actuator에 내장되어 있어 한계비용이 Prometheus 레지스트리 의�
 ```
 supplier.stayproducts.fetch (Timer, 백분위 히스토그램 활성)
   supplier = A | B
-  outcome  = success | failure | timeout
+  outcome  = success | failure | timeout | rate_limited | circuit_open
 ```
 
-- `outcome`은 어댑터가 통일한 공통 예외에서 유도합니다 — 무응답이면 `timeout`, 그 외 실패는 `failure`.
-  서킷 브레이커가 도입되면 `circuit_open`을 그때 추가합니다(명시적 진화).
+- `outcome`은 어댑터가 통일한 공통 예외의 분류에서 유도합니다 — 무응답이면 `timeout`, 한도
+  초과(429/`E429`)는 `rate_limited`(429 관측이 대규모 대응의 전환 트리거로 정의되어 있어
+  — [INTEGRATION.md](INTEGRATION.md) — `failure`에 묻으면 트리거를 관측할 수 없습니다), 서킷이 차단한
+  호출은 `circuit_open`(원격에 나가지 않았어도 셉니다 — 차단은 곧 상품 노출 축소라 빈도 자체가 신호),
+  그 외 실패는 `failure`.
+- **기록 단위는 시도(attempt)입니다** — 계측이 서킷 밖·재시도 안에 위치해 재시도의 각 시도가 개별
+  기록됩니다. 재시도 대기 시간이 지연 분포에 섞이지 않아 타임아웃 조정용 p95/p99가 공급사의 실제 응답
+  분포를 말하고, 재시도로 복구된 순단도 실패 시도로 남습니다.
 - 백분위 히스토그램을 켭니다 — 응답 타임아웃 5초를 실측 p95/p99로 조정하기로 한 결정의 전제이며,
-  카디널리티(공급사 2 × outcome 3)가 작아 비용이 미미합니다.
-- 파생 값: 성공률 = `success` ÷ 전체, 타임아웃 비율 = `timeout` ÷ 전체, 지연 분포(p95/p99).
+  카디널리티(공급사 2 × outcome 5)가 작아 비용이 미미합니다.
+- 재시도·서킷 자체의 지표(`resilience4j_retry_*`, `resilience4j_circuitbreaker_*` — 서킷 상태 포함)는
+  resilience4j 가 자동 등록해 같은 경로로 노출됩니다.
 
-지표명에 `availability`를 쓰지 않는 것은 의도적입니다 — 용어집에서 `availability`는 상품의 가용성
-3상태로 확정되어 있고, 공급사 A의 원시 엔드포인트명과도 철자가 겹치므로 지표명은
-`fetchStayProducts`(용어집의 조회 서술)와 1:1로 맞췄습니다.
+핵심 3종(공급사별 성공률·응답 지연·타임아웃 비율)은 전부 이 타이머 하나에서 유도됩니다 — 별도 카운터를
+두면 타이머 count 와 이중 집계가 되어 어긋날 수 있는 두 원천이 생기므로, 비율·분포는 조회 시점에
+계산합니다.
+
+```promql
+# 공급사별 성공률 (5분 창)
+sum(rate(supplier_stayproducts_fetch_seconds_count{outcome="success"}[5m])) by (supplier)
+  / sum(rate(supplier_stayproducts_fetch_seconds_count[5m])) by (supplier)
+# 공급사별 응답 지연 p95
+histogram_quantile(0.95, sum(rate(supplier_stayproducts_fetch_seconds_bucket[5m])) by (supplier, le))
+# 공급사별 타임아웃 비율 (5분 창)
+sum(rate(supplier_stayproducts_fetch_seconds_count{outcome="timeout"}[5m])) by (supplier)
+  / sum(rate(supplier_stayproducts_fetch_seconds_count[5m])) by (supplier)
+```
+
+### 보조 카운터 — 미매핑 스킵과 가용성 판정 분포
+
+```
+supplier.stayproducts.unmapped (Counter)      supplier = A | B, level = property | roomType
+supplier.stayproducts.availability (Counter)  supplier = A | B, result = available | sold_out | undetermined
+```
+
+- **미매핑 스킵**: 숙소 목록에 없던 상품이 재고 응답에 나타나 검색에서 빠질 때 셉니다. 오르면 "동기화가
+  밀렸다 — 팔 수 있는 상품이 빠지고 있다"는 신호라, 수동 동기화 트리거라는 운영 액션으로 직결됩니다.
+- **가용성 판정 분포**: 엄격 판정이 미확정 상품을 조용히 응답에서 빼는 구조라, 이 분포가 보수적 노출
+  정책의 기회비용을 정량화하는 유일한 창입니다. `undetermined` 비율 상승은 공급사 재고 데이터 품질
+  저하의 조기 신호입니다.
+
+지표명의 `availability`는 용어집의 가용성 3상태와 정확히 같은 뜻일 때만 씁니다 — 판정 분포 카운터가
+그 경우이고, 반대로 조회 타이머는 공급사 A의 원시 엔드포인트명과 혼동될 수 있어
+`fetchStayProducts`(용어집의 조회 서술)와 1:1로 맞춘 이름을 씁니다.
 
 ### 자동 계측의 함정 — 커스텀 타이머가 필수인 이유
 
@@ -57,10 +96,12 @@ Spring Boot가 WebClient에 자동으로 붙이는 `http.client.requests` 지표
 
 | 신호 | 조건 | 근거 |
 |---|---|---|
-| 공급사 성공률 저하 | 5분 창에서 `success` 비율 < 95% | 순단이 아닌 지속 저하의 신호. 재시도가 없는 구조라 순단도 실패로 집계됨을 감안해 100%가 아닌 95% |
+| 공급사 성공률 저하 | 5분 창에서 `success` 비율 < 95% | 순단이 아닌 지속 저하의 신호. 계측이 시도 단위라 재시도로 복구된 순단도 실패 시도로 집계됨을 감안해 100%가 아닌 95% |
 | 응답 지연 상승 | p95 > 4초 (= 응답 타임아웃 5초의 80%) | 대량 타임아웃의 전조를 미리 알리고, 동시에 타임아웃 값 재검토의 신호로 쓴다 |
 | 타임아웃 비율 | 5분 창에서 `timeout` 비율 > 5% | 무응답은 건당 5초씩 검색을 묶는 가장 비싼 실패라 별도 신호로 분리 |
-| (서킷 도입 후) 서킷 open | open 즉시 | 공급사 차단은 곧 상품 노출 축소 — 즉시 인지 대상 |
+| 서킷 open | open 즉시 (`circuit_open` 발생 또는 `resilience4j_circuitbreaker_state`) | 공급사 차단은 곧 상품 노출 축소 — 즉시 인지 대상 |
+| 미매핑 스킵 발생 | 5분 창에서 `unmapped` 증가 지속 | 팔 수 있는 상품이 검색에서 빠지는 중 — 수동 동기화 트리거 검토 |
+| 미확정 비율 상승 | 5분 창에서 `undetermined` 비율 > 10% | 공급사 재고 데이터 품질 저하의 조기 신호 — 보수 노출의 기회비용이 커지는 중 |
 
 검색 API 자체의 5xx율·지연 같은 표준 웹 신호는 actuator 기본 지표(`http.server.requests`)로 커버되므로
 관례 임계값을 적용합니다. 대시보드는 공급사별 패널(성공률·지연·타임아웃)을 기본 단위로 구성합니다.

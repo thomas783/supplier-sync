@@ -35,6 +35,8 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-validation")
     // 운영 지표 (헬스체크 등)
     implementation("org.springframework.boot:spring-boot-starter-actuator")
+    // 지표를 Prometheus 텍스트 포맷으로 노출 — 수집기 없이 curl 로도 읽힌다 (docs/MONITORING.md)
+    runtimeOnly("io.micrometer:micrometer-registry-prometheus")
     // 회복탄력성 — 재시도 + 공급사별 서킷 브레이커 (docs/TECH_STACK.md). BOM 관리 밖이라 명시 고정
     implementation("io.github.resilience4j:resilience4j-spring-boot3:2.2.0")
     // Mono 체인에 끼워 넣는 전용 연산자 (RetryOperator / CircuitBreakerOperator)
