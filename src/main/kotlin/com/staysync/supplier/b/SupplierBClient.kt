@@ -1,7 +1,7 @@
 package com.staysync.supplier.b
 
 import com.staysync.domain.model.Supplier
-import com.staysync.supplier.isRetryableStatus
+import com.staysync.supplier.supplierErrorOfStatus
 import com.staysync.supplier.toSupplierError
 import com.staysync.supplier.StayProductQuery
 import com.staysync.supplier.SupplierCallException
@@ -75,13 +75,10 @@ class SupplierBClient(
      */
     private fun <T> SupplierBBaseResponse<T>.requireSuccessData(endpoint: String): T {
         if (resultCode != SupplierBBaseResponse.SUCCESS_CODE) {
-            // resultCode 는 HTTP 상태를 미러링한다 (E503 → 503) — 숫자로 변환해 공통 분류 규칙을 그대로 쓴다.
-            // E 접두 + 숫자의 미러 형식이 아닌 알 수 없는 코드는 보수적으로 재시도 제외.
+            // resultCode 는 HTTP 상태를 미러링한다 (E503 → 503) — 여기서는 상태 추출만 하고,
+            // 분류(재시도·한도 초과)는 공통 팩토리에 위임한다. 미러 형식이 아닌 알 수 없는 코드는 null.
             val status = resultCode.takeIf { it.startsWith("E") }?.removePrefix("E")?.toIntOrNull()
-            throw SupplierCallException(
-                supplier, "$endpoint resultCode=$resultCode",
-                retryable = status != null && isRetryableStatus(status),
-            )
+            throw supplierErrorOfStatus(supplier, "$endpoint resultCode=$resultCode", status)
         }
         return data ?: throw SupplierCallException(supplier, "$endpoint: success without data")
     }
