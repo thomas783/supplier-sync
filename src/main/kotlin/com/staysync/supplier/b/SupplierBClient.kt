@@ -2,15 +2,16 @@ package com.staysync.supplier.b
 
 import com.staysync.config.SupplierProperties
 import com.staysync.domain.model.Supplier
+import com.staysync.observability.SupplierMetrics
 import com.staysync.supplier.supplierErrorOfStatus
 import com.staysync.supplier.toSupplierError
+import com.staysync.supplier.ConversionGate
 import com.staysync.supplier.StayProductQuery
 import com.staysync.supplier.SupplierCallException
 import com.staysync.supplier.SupplierClient
 import com.staysync.supplier.SupplierProperty
 import com.staysync.supplier.SupplierRoomType
 import com.staysync.supplier.SupplierStayProduct
-import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Component
 import org.springframework.web.reactive.function.client.WebClient
@@ -27,14 +28,15 @@ import java.time.format.DateTimeFormatter
  * - 요금 변환: totalPrice 가 이미 gross 총액이라 그대로 사용.
  * - 중복 날짜 방어: 같은 날짜의 잔여가 두 번 오면 어느 쪽이 진실인지 알 수 없다 — 그 항목만 제외한다
  *   (보수 원칙). 공급사 전체 응답은 죽이지 않는다.
+ * - 값 결함 관문: 정규화·조립의 불변식이 요구하는 조건(가격·통화·재고·정원)을 [ConversionGate] 로
+ *   response 를 내놓기 전에 선제 검증하고, 결함 항목만 제외한다 (docs/QUARANTINE.md).
  */
 @Component
 class SupplierBClient(
     @param:Qualifier("supplierBWebClient") private val webClient: WebClient,
     private val properties: SupplierProperties,
+    private val metrics: SupplierMetrics,
 ) : SupplierClient {
-    private val log = LoggerFactory.getLogger(javaClass)
-
     override val supplier = Supplier.B
 
     override fun fetchProperties(): List<SupplierProperty> =
@@ -72,7 +74,14 @@ class SupplierBClient(
             .retrieve()
             .bodyToMono<SupplierBBaseResponse<SupplierBSearchData>>()
             .map { response ->
-                response.requireSuccessData(SEARCH_ENDPOINT).items.mapNotNull { it.toStayProductOrNull() }
+                response.requireSuccessData(SEARCH_ENDPOINT).items.mapNotNull { item ->
+                    // 전체 격리 기록 자리(미구현, docs/QUARANTINE.md) — 원시 페이로드 보존은 어댑터만 안다:
+                    // quarantineRecorder.record(supplier, rawPayload = item, requestContext = query)
+                    // 사유별 카운터는 onDefect 로 기록한다 — 검색 경로 결함이 대시보드에 보이게
+                    ConversionGate.admit(supplier, rawDates = item.inventory.map { it.date }, product = item.toStayProduct()) {
+                        metrics.recordQuarantined(supplier, it)
+                    }
+                }
             }
             .onErrorMap { toSupplierError(supplier, SEARCH_ENDPOINT, it) }
 
@@ -104,23 +113,17 @@ class SupplierBClient(
         },
     )
 
-    private fun SupplierBSearchItem.toStayProductOrNull(): SupplierStayProduct? {
-        if (inventory.size != inventory.distinctBy { it.date }.size) {
-            log.warn("skipping item with duplicate dates: supplier={} propertyId={} roomId={}", supplier, propertyId, roomId)
-            return null
-        }
-        return SupplierStayProduct(
-            supplierPropertyCode = propertyId,
-            propertyName = propertyName,
-            supplierRoomTypeCode = roomId,
-            roomTypeName = roomName,
-            maxOccupancy = maxOccupancy,
-            breakfastIncluded = breakfastIncluded,
-            currency = currency,
-            grossTotalAmount = totalPrice,
-            remainingByDate = inventory.associate { it.date to it.remainingRooms },
-        )
-    }
+    private fun SupplierBSearchItem.toStayProduct(): SupplierStayProduct = SupplierStayProduct(
+        supplierPropertyCode = propertyId,
+        propertyName = propertyName,
+        supplierRoomTypeCode = roomId,
+        roomTypeName = roomName,
+        maxOccupancy = maxOccupancy,
+        breakfastIncluded = breakfastIncluded,
+        currency = currency,
+        grossTotalAmount = totalPrice,
+        remainingByDate = inventory.associate { it.date to it.remainingRooms },
+    )
 
     companion object {
         private const val PROPERTIES_ENDPOINT = "/b/api/properties"

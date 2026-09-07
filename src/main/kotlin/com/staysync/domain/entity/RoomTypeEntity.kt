@@ -1,5 +1,6 @@
 package com.staysync.domain.entity
 
+import com.staysync.domain.model.DomainInvariants
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.FetchType
@@ -73,16 +74,16 @@ class RoomTypeEntity(
     var maxOccupancy: Int = maxOccupancy
         protected set
 
-    // 상태 불변식의 단일 정의이자 영속 최후 방어선 — 계약 밖 데이터의 1차 필터는 동기화의 경계
-    // 검증(Bean Validation)이 저장 전에 끝내므로, 여기서 터진다는 것은 버그이고 트랜잭션이 죽는 게 맞다.
+    // 상태 불변식의 단일 정의이자 영속 최후 방어선 — 계약 밖 데이터의 1차 필터는 저장 직전
+    // PropertyMappingService(ConversionGate.defectOf)가 끝내므로, 여기서 터진다는 것은 버그이고 트랜잭션이 죽는 게 맞다.
     // 생성(init)·갱신(updateFrom)·저장 직전(JPA 콜백 — 우회 경로의 그물망)이 모두 이 함수를 지난다.
     // Hibernate 의 조회 시 인스턴스화(no-arg 생성자)는 init 을 거치지 않으므로 하이드레이션에는 영향이 없다.
     @PrePersist
     @PreUpdate
     fun validate() {
-        require(supplierRoomTypeCode.isNotBlank()) { "supplierRoomTypeCode must not be blank" }
-        require(roomTypeName.isNotBlank()) { "roomTypeName must not be blank" }
-        require(maxOccupancy > 0) { "maxOccupancy must be positive: $maxOccupancy" }
+        require(DomainInvariants.validRequiredText(supplierRoomTypeCode)) { "supplierRoomTypeCode must not be blank" }
+        require(DomainInvariants.validRequiredText(roomTypeName)) { "roomTypeName must not be blank" }
+        require(DomainInvariants.validOccupancy(maxOccupancy)) { "maxOccupancy must be positive: $maxOccupancy" }
     }
 
     init {

@@ -2,6 +2,7 @@ package com.staysync.observability
 
 import com.staysync.domain.model.Availability
 import com.staysync.domain.model.Supplier
+import com.staysync.supplier.DefectReason
 import com.staysync.supplier.SupplierCallException
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException
 import io.micrometer.core.instrument.MeterRegistry
@@ -45,19 +46,29 @@ class SupplierMetrics(
     /**
      * 가용성 판정 분포 집계 — 엄격 판정이 조용히 상품을 응답에서 빼는 구조라, 이 분포가 보수적 노출
      * 정책의 기회비용을 정량화하는 유일한 창이다. `undetermined` 비율 상승은 공급사 재고 데이터 품질
-     * 저하의 조기 신호다.
+     * 저하의 조기 신호다. 미확정은 표준 모델에 없는 부재(null)지만, 관측은 제외되기 전 여기서 잡는다.
      */
-    fun recordAvailability(supplier: Supplier, availability: Availability) {
-        val result = when (availability) {
-            is Availability.Available -> "available"
-            Availability.SoldOut -> "sold_out"
-            Availability.Undetermined -> "undetermined"
+    fun recordAvailability(supplier: Supplier, availability: Availability?) {
+        val result = when {
+            availability == null -> "undetermined"
+            availability.isAvailable -> "available"
+            else -> "sold_out"
         }
         registry.counter(AVAILABILITY_COUNTER, "supplier", supplier.name, "result", result).increment()
     }
 
     private fun recordUnmapped(supplier: Supplier, level: String) {
         registry.counter(UNMAPPED_COUNTER, "supplier", supplier.name, "level", level).increment()
+    }
+
+    /**
+     * 결함 격리 집계 — 변환 관문([com.staysync.supplier.ConversionGate])이 결함으로 버린 항목을 사유별로
+     * 센다. 검색 경로(admit)와 동기화 경로(defectOf) 양쪽 드롭이 여기 모인다. 미매핑(`unmapped`)과 층위가
+     * 다르다 — 미매핑은 "우리 매핑의 공백", 이건 "공급사 데이터의 결함"이다. (전체 격리 저장은 미구현 —
+     * 카운터만 우선 도입, docs/QUARANTINE.md)
+     */
+    fun recordQuarantined(supplier: Supplier, reason: DefectReason) {
+        registry.counter(QUARANTINED_COUNTER, "supplier", supplier.name, "reason", reason.name).increment()
     }
 
     private fun record(sample: Timer.Sample, supplier: Supplier, outcome: String) {
@@ -76,5 +87,6 @@ class SupplierMetrics(
         const val TIMER_NAME = "supplier.stayproducts.fetch"
         const val UNMAPPED_COUNTER = "supplier.stayproducts.unmapped"
         const val AVAILABILITY_COUNTER = "supplier.stayproducts.availability"
+        const val QUARANTINED_COUNTER = "supplier.stayproducts.quarantined"
     }
 }

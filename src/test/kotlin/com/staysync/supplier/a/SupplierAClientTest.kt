@@ -1,5 +1,7 @@
 package com.staysync.supplier.a
 
+import com.staysync.observability.SupplierMetrics
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import com.staysync.config.SupplierProperties
 import com.staysync.supplier.StayProductQuery
 import com.staysync.supplier.SupplierCallException
@@ -23,6 +25,10 @@ class SupplierAClientTest {
 
     private lateinit var server: MockWebServer
     private lateinit var client: SupplierAClient
+    private val registry = SimpleMeterRegistry()
+
+    private fun quarantinedCount(reason: String): Double =
+        registry.find(SupplierMetrics.QUARANTINED_COUNTER).tags("supplier", "A", "reason", reason).counter()?.count() ?: 0.0
 
     private val query = StayProductQuery(
         propertyCodes = listOf("A-10023", "A-10044"),
@@ -51,7 +57,7 @@ class SupplierAClientTest {
             .defaultHeader("X-Api-Key", "test-key")
             .clientConnector(ReactorClientHttpConnector(httpClient))
             .build()
-        client = SupplierAClient(webClient, properties)
+        client = SupplierAClient(webClient, properties, SupplierMetrics(registry))
     }
 
     @AfterEach
@@ -159,6 +165,64 @@ class SupplierAClientTest {
         val products = client.fetchStayProducts(query).block()!!
 
         assertEquals(listOf("A-10023"), products.map { it.supplierPropertyCode })
+    }
+
+    @Test
+    fun `값 결함 항목은 그 항목만 제외된다 - 변환 관문이 음수 총액을 잡는다`() {
+        enqueueJson(
+            """
+            {
+              "items": [
+                { "hotelCode": "A-10023", "hotelName": "정상", "roomTypeCode": "DLX-TWN",
+                  "roomTypeName": "Deluxe Twin", "maxOccupancy": 2, "breakfastIncluded": false, "currency": "KRW",
+                  "dailyRates": [ { "date": "2026-09-01", "remainingRooms": 3, "nightlyRate": 100000, "taxAmount": 10000 } ] },
+                { "hotelCode": "A-10044", "hotelName": "음수 요금", "roomTypeCode": "STD-DBL",
+                  "roomTypeName": "Standard Double", "maxOccupancy": 2, "breakfastIncluded": false, "currency": "KRW",
+                  "dailyRates": [ { "date": "2026-09-01", "remainingRooms": 2, "nightlyRate": -88000, "taxAmount": 8800 } ] }
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        val products = client.fetchStayProducts(query).block()!!
+
+        assertEquals(listOf("A-10023"), products.map { it.supplierPropertyCode })
+        // 검색 경로 결함이 대시보드에 보이도록 사유별 카운터로 집계된다 (docs/MONITORING.md)
+        assertEquals(1.0, quarantinedCount("INVALID_PRICE"))
+    }
+
+    @Test
+    fun `숙소 목록 - 어댑터는 결함을 거르지 않고 원시 그대로 통과시킨다 (필터는 저장 경계의 몫)`() {
+        // sync 경로의 결함 판정·집계는 PropertyMappingService(ConversionGate.defectOf)의 몫이다
+        // (docs/QUARANTINE.md). 어댑터는 형식만 통일하고 계약 밖 레코드도 그대로 넘긴다.
+        enqueueJson(
+            """
+            {
+              "items": [
+                { "hotelCode": "A-10023", "hotelName": "Riverside Hotel Seoul",
+                  "roomTypes": [ { "roomTypeCode": "DLX-TWN", "roomTypeName": "Deluxe Twin", "maxOccupancy": 2 } ] },
+                { "hotelCode": "A-10044", "hotelName": " ",
+                  "roomTypes": [ { "roomTypeCode": "STD-DBL", "roomTypeName": "Standard Double", "maxOccupancy": 2 } ] }
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        val properties = client.fetchProperties()
+
+        assertEquals(listOf("A-10023", "A-10044"), properties.map { it.supplierPropertyCode })
+    }
+
+    @Test
+    fun `역직렬화가 깨지는 본문은 호출 전체가 재시도 불가 실패다 - 항목 단위 제외가 아니다`() {
+        // 엄격 DTO 의 현재 동작 — 항목 하나의 위반도 전체 파싱을 죽인다. 항목 수준 결함을 격리로
+        // 살리는 관용 파싱 전환은 격리 기록과 함께 구현 예정 (docs/QUARANTINE.md 역직렬화 두 층위)
+        enqueueJson("""{"items": [ { "hotelCode": 123, "dailyRates": "broken" } ]}""")
+
+        val ex = assertThrows(SupplierCallException::class.java) {
+            client.fetchStayProducts(query).block()
+        }
+        assertEquals(false, ex.retryable)
     }
 
     @Test

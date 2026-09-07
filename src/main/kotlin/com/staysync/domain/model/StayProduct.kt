@@ -13,7 +13,7 @@ package com.staysync.domain.model
  * @property property 표준 숙소 (내부 대리키 기반)
  * @property roomType 표준 객실 타입
  * @property breakfastIncluded 총액에 조식이 포함되는지 — 상품의 조건
- * @property availability 요청 기간 전체에 대한 가용성 판정 (3상태)
+ * @property availability 요청 기간 전체에 대한 확정 가용성 (0 = 확정 매진) — 미확정은 정규화에서 제외되어 여기 없다
  * @property supplier 출처 공급사
  * @property price 표준 요금 묶음
  */

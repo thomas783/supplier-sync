@@ -2,6 +2,7 @@ package com.staysync.observability
 
 import com.staysync.domain.model.Availability
 import com.staysync.domain.model.Supplier
+import com.staysync.supplier.DefectReason
 import com.staysync.supplier.SupplierCallException
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException
 import io.github.resilience4j.circuitbreaker.CircuitBreaker
@@ -72,12 +73,22 @@ class SupplierMetricsTest {
 
     @Test
     fun `가용성 판정이 3상태 분포로 집계된다`() {
-        metrics.recordAvailability(Supplier.A, Availability.Available(2))
-        metrics.recordAvailability(Supplier.A, Availability.SoldOut)
-        metrics.recordAvailability(Supplier.A, Availability.Undetermined)
+        metrics.recordAvailability(Supplier.A, Availability(availableRooms = 2))
+        metrics.recordAvailability(Supplier.A, Availability(availableRooms = 0))
+        metrics.recordAvailability(Supplier.A, null) // 미확정 — 모델 밖의 부재지만 관측은 유지
 
         assertEquals(1.0, counterValue(SupplierMetrics.AVAILABILITY_COUNTER, "supplier", "A", "result", "available"))
         assertEquals(1.0, counterValue(SupplierMetrics.AVAILABILITY_COUNTER, "supplier", "A", "result", "sold_out"))
         assertEquals(1.0, counterValue(SupplierMetrics.AVAILABILITY_COUNTER, "supplier", "A", "result", "undetermined"))
+    }
+
+    @Test
+    fun `결함 격리가 사유별로 집계된다`() {
+        metrics.recordQuarantined(Supplier.A, DefectReason.INVALID_PRICE)
+        metrics.recordQuarantined(Supplier.A, DefectReason.INVALID_PRICE)
+        metrics.recordQuarantined(Supplier.A, DefectReason.DUPLICATE_DATE)
+
+        assertEquals(2.0, counterValue(SupplierMetrics.QUARANTINED_COUNTER, "supplier", "A", "reason", "INVALID_PRICE"))
+        assertEquals(1.0, counterValue(SupplierMetrics.QUARANTINED_COUNTER, "supplier", "A", "reason", "DUPLICATE_DATE"))
     }
 }

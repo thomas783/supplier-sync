@@ -5,9 +5,10 @@ import com.staysync.domain.entity.RoomTypeEntity
 import com.staysync.domain.model.Supplier
 import com.staysync.domain.repository.PropertyRepository
 import com.staysync.domain.repository.RoomTypeRepository
+import com.staysync.observability.SupplierMetrics
+import com.staysync.supplier.ConversionGate
 import com.staysync.supplier.SupplierProperty
 import com.staysync.supplier.SupplierRoomType
-import jakarta.validation.Validator
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -23,7 +24,7 @@ import org.springframework.transaction.annotation.Transactional
 class PropertyMappingService(
     private val propertyRepository: PropertyRepository,
     private val roomTypeRepository: RoomTypeRepository,
-    private val validator: Validator,
+    private val metrics: SupplierMetrics,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -32,8 +33,10 @@ class PropertyMappingService(
      *
      * 계약 밖 데이터(빈 이름, 0 이하 정원)는 **그 레코드만 보수적으로 건너뛴다** — 깨진 표시가 고객에게
      * 노출되는 것(고객 피해)보다 그 숙소가 검색에서 빠지는 것(기회 손실)이 낫다는, 가용성 판정과 같은
-     * 비대칭이다. 기존 매핑이 있는 레코드는 갱신만 건너뛰어 멀쩡한 기존 값을 지킨다. 건너뛴 수는 결과와
-     * 경고 로그로 드러난다 — 조용한 유실이 아니라 관측 가능한 스킵이다.
+     * 비대칭이다. 결함 판정은 [ConversionGate] — 곧 [com.staysync.domain.model.DomainInvariants] 단일
+     * 원천 — 에 위임한다(검색 경로의 관문과 같은 규칙, docs/QUARANTINE.md). 기존 매핑이 있는 레코드는
+     * 갱신만 건너뛰어 멀쩡한 기존 값을 지킨다. 건너뛴 수는 결과의 `skipped` 와 경고 로그로 드러난다 —
+     * 조용한 유실이 아니라 관측 가능한 스킵이다.
      */
     @Transactional(readOnly = false)
     fun persistMappings(supplier: Supplier, properties: List<SupplierProperty>): SyncCounts {
@@ -41,23 +44,25 @@ class PropertyMappingService(
         var roomTypeCount = 0
         var skippedCount = 0
         properties.forEach { property ->
-            // 깨진 레코드는 예외 상황이 아니라 예상 케이스 — 중간 타입의 계약(Bean Validation)으로 저장 전에 판정한다
-            violationsOf(property)?.let { reasons ->
+            // 깨진 레코드는 예외 상황이 아니라 예상 케이스 — 저장 직전 관문(DomainInvariants)으로 판정한다
+            ConversionGate.defectOf(property)?.let { reason ->
                 log.warn(
-                    "skipping invalid property: supplier={} code={} reasons={}",
-                    supplier, property.supplierPropertyCode, reasons,
+                    "skipping invalid property: supplier={} code={} reason={}",
+                    supplier, property.supplierPropertyCode, reason,
                 )
+                metrics.recordQuarantined(supplier, reason)
                 skippedCount += 1 + property.roomTypes.size
                 return@forEach
             }
             val propertyEntity = upsertProperty(supplier, property)
             propertyCount++
             property.roomTypes.forEach { roomType ->
-                violationsOf(roomType)?.let { reasons ->
+                ConversionGate.defectOf(roomType)?.let { reason ->
                     log.warn(
-                        "skipping invalid room type: supplier={} property={} code={} reasons={}",
-                        supplier, property.supplierPropertyCode, roomType.supplierRoomTypeCode, reasons,
+                        "skipping invalid room type: supplier={} property={} code={} reason={}",
+                        supplier, property.supplierPropertyCode, roomType.supplierRoomTypeCode, reason,
                     )
+                    metrics.recordQuarantined(supplier, reason)
                     skippedCount++
                     return@forEach
                 }
@@ -67,12 +72,6 @@ class PropertyMappingService(
         }
         return SyncCounts(propertyCount, roomTypeCount, skippedCount)
     }
-
-    /** 계약 위반이면 사유 목록을, 유효하면 null 을 반환한다. */
-    private fun violationsOf(record: Any): String? =
-        validator.validate(record)
-            .takeIf { it.isNotEmpty() }
-            ?.joinToString { "${'$'}{it.propertyPath}: ${'$'}{it.message}" }
 
     // 있으면 표시 속성 갱신(더티 체킹으로 저장), 없으면 최초 insert — 자연키 UNIQUE 가 "같은 상품 = 같은 내부 id"를 보장한다
 

@@ -1,5 +1,7 @@
 package com.staysync.supplier.b
 
+import com.staysync.observability.SupplierMetrics
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import com.staysync.config.SupplierProperties
 import com.staysync.supplier.StayProductQuery
 import com.staysync.supplier.SupplierCallException
@@ -51,7 +53,7 @@ class SupplierBClientTest {
             .defaultHeader("X-Api-Key", "test-key")
             .clientConnector(ReactorClientHttpConnector(httpClient))
             .build()
-        client = SupplierBClient(webClient, properties)
+        client = SupplierBClient(webClient, properties, SupplierMetrics(SimpleMeterRegistry()))
     }
 
     @AfterEach
@@ -147,6 +149,35 @@ class SupplierBClientTest {
         val products = client.fetchStayProducts(query).block()!!
 
         assertEquals(emptyList<Any>(), products)
+    }
+
+    @Test
+    fun `값 결함 항목은 그 항목만 제외된다 - 변환 관문이 통화 공백과 음수 재고를 잡는다`() {
+        enqueueJson(
+            """
+            {
+              "resultCode": "0000", "resultMessage": "SUCCESS",
+              "data": { "items": [
+                { "propertyId": "B77120", "propertyName": "정상", "roomId": "R-401",
+                  "roomName": "Deluxe Twin Room", "maxOccupancy": 2, "breakfastIncluded": true, "currency": "KRW",
+                  "totalPrice": 452000, "taxIncluded": true,
+                  "inventory": [ { "date": "2026-09-01", "remainingRooms": 3 } ] },
+                { "propertyId": "B77121", "propertyName": "통화 공백", "roomId": "R-402",
+                  "roomName": "Suite", "maxOccupancy": 2, "breakfastIncluded": true, "currency": " ",
+                  "totalPrice": 500000, "taxIncluded": true,
+                  "inventory": [ { "date": "2026-09-01", "remainingRooms": 3 } ] },
+                { "propertyId": "B77122", "propertyName": "음수 재고", "roomId": "R-403",
+                  "roomName": "Family Room", "maxOccupancy": 4, "breakfastIncluded": true, "currency": "KRW",
+                  "totalPrice": 600000, "taxIncluded": true,
+                  "inventory": [ { "date": "2026-09-01", "remainingRooms": -1 } ] }
+              ] }
+            }
+            """.trimIndent(),
+        )
+
+        val products = client.fetchStayProducts(query).block()!!
+
+        assertEquals(listOf("B77120"), products.map { it.supplierPropertyCode })
     }
 
     @Test

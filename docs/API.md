@@ -91,14 +91,14 @@ GET /api/v1/stays/search?checkIn=2026-09-01&checkOut=2026-09-04&adults=2&childre
 
 ### 가용성 노출 정책
 
-도메인의 가용성 판정은 3상태이며, wire에는 그 결과가 `availability.availableRooms` 숫자 하나로
-직렬화됩니다.
+가용성 판정의 결과는 세 가지지만, 미확정은 정규화 단계에서 제외되어 응답에 아예 실리지 않습니다 —
+wire 에 도달하는 것은 확정 결과의 `availability.availableRooms` 숫자 하나뿐입니다.
 
-| 도메인 상태 | 조건 | 응답에서 |
+| 판정 결과 | 조건 | 응답에서 |
 |---|---|---|
-| `AVAILABLE` | 날짜별 잔여의 최소값 ≥ 1 | `availableRooms ≥ 1`로 노출 |
-| `SOLD_OUT` | 모든 날짜 데이터가 있고 최소값 = 0 | `availableRooms: 0`으로 **노출** — 취소 알림 등 후속 기능의 진입점 |
-| `UNDETERMINED` | 요청 기간의 날짜 누락 | **응답에서 제외** — 매진이라 단정하는 것도 거짓이므로 |
+| 예약 가능 | 날짜별 잔여의 최소값 ≥ 1 | `availableRooms ≥ 1`로 노출 |
+| 확정 매진 | 모든 날짜 데이터가 있고 최소값 = 0 | `availableRooms: 0`으로 **노출** — 취소 알림 등 후속 기능의 진입점 |
+| 미확정 | 요청 기간의 날짜 누락 | **정규화에서 제외** — 매진이라 단정하는 것도 거짓이므로 |
 
 wire에서 상태가 숫자로 완전히 유도되므로 별도 status 필드는 두지 않고, 프론트 편의를 위한
 `isAvailable`(boolean)만 파생값으로 함께 내려갑니다.

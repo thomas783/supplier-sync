@@ -1,6 +1,7 @@
 package com.staysync.domain.model
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import java.time.LocalDate
 
@@ -16,7 +17,7 @@ class AvailabilityPolicyTest {
             stayDates = listOf(d1, d2, d3),
             remainingByDate = mapOf(d1 to 3, d2 to 1, d3 to 5),
         )
-        assertEquals(Availability.Available(availableRooms = 1), result)
+        assertEquals(Availability(availableRooms = 1), result)
     }
 
     @Test
@@ -25,7 +26,7 @@ class AvailabilityPolicyTest {
             stayDates = listOf(d1, d2, d3),
             remainingByDate = mapOf(d1 to 3, d3 to 5), // d2 누락
         )
-        assertEquals(Availability.Undetermined, result)
+        assertNull(result) // 미확정은 값이 아니라 부재 — 정규화가 이 상품을 제외한다
     }
 
     @Test
@@ -34,8 +35,8 @@ class AvailabilityPolicyTest {
             stayDates = listOf(d1, d2, d3),
             remainingByDate = mapOf(d1 to 2, d2 to 0, d3 to 4),
         )
-        assertEquals(Availability.SoldOut, result)
-        assertEquals(0, (result as Availability.Determined).availableRooms) // 확정 매진은 "확실한 0"
+        assertEquals(Availability(availableRooms = 0), result) // 확정 매진은 "확실한 0"
+        assertEquals(false, result?.isAvailable)
     }
 
     @Test
@@ -44,15 +45,12 @@ class AvailabilityPolicyTest {
             stayDates = listOf(d1, d2, d3),
             remainingByDate = mapOf(d1 to 0, d3 to 0), // d2 누락 + 나머지 매진
         )
-        assertEquals(Availability.Undetermined, result)
+        assertNull(result)
     }
 
     @Test
     fun `숙박일이 비어 있으면 미확정이다`() {
-        assertEquals(
-            Availability.Undetermined,
-            AvailabilityPolicy.judge(emptyList(), mapOf(d1 to 5)),
-        )
+        assertNull(AvailabilityPolicy.judge(emptyList(), mapOf(d1 to 5)))
     }
 
     @Test
@@ -62,6 +60,6 @@ class AvailabilityPolicyTest {
             stayDates = listOf(d1, d2),
             remainingByDate = mapOf(d1 to 3, d2 to 2, outOfRange to 0), // 기간 밖 매진은 무관
         )
-        assertEquals(Availability.Available(availableRooms = 2), result)
+        assertEquals(Availability(availableRooms = 2), result)
     }
 }

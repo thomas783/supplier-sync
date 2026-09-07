@@ -18,8 +18,6 @@ import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry
 import io.github.resilience4j.retry.RetryConfig
 import io.github.resilience4j.retry.RetryRegistry
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
-import jakarta.validation.Validation
-import jakarta.validation.Validator
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
@@ -157,6 +155,23 @@ class PropertySyncServiceTest {
     }
 
     @Test
+    fun `결함 룸타입만 건너뛰고 숙소와 정상 룸타입은 저장된다 - 정원 0`() {
+        fakeA.propertiesToReturn = listOf(
+            SupplierProperty(
+                "A-1", "정상 숙소",
+                listOf(SupplierRoomType("R1", "디럭스", 2), SupplierRoomType("R2", "정원 0", 0)), // 정원 0 = 결함
+            ),
+        )
+
+        val results = service.syncAll()
+
+        val resultA = results.single { it.supplier == Supplier.A }
+        assertEquals(1, resultA.properties)
+        assertEquals(1, resultA.roomTypes) // 정상 룸타입만
+        assertEquals(1, resultA.skipped) // 결함 룸타입 1
+    }
+
+    @Test
     fun `갱신 데이터가 깨지면 갱신을 건너뛰고 기존 값을 유지한다`() {
         service.syncAll()
 
@@ -198,8 +213,8 @@ class PropertySyncServiceTest {
         @Bean fun fakeA() = FakeSupplierClient(Supplier.A)
         @Bean fun fakeB() = FakeSupplierClient(Supplier.B)
 
-        // @DataJpaTest 슬라이스에는 Validator 자동 구성이 없다 — 본 앱에서는 Boot 가 제공
-        @Bean fun validator(): Validator = Validation.buildDefaultValidatorFactory().validator
+        // PropertyMappingService 가 결함 격리 카운터를 기록하므로 SupplierMetrics 빈이 필요하다
+        @Bean fun supplierMetrics() = SupplierMetrics(SimpleMeterRegistry())
 
         // 운영과 같은 시도 횟수·판별을 쓰되 대기만 1ms 로 줄인 재시도 — 실패 시나리오 테스트가 느려지지 않게
         @Bean fun supplierResilience(): SupplierResilience = SupplierResilience(

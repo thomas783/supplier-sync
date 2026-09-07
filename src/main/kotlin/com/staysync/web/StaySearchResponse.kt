@@ -1,6 +1,5 @@
 package com.staysync.web
 
-import com.staysync.domain.model.Availability
 import com.staysync.domain.model.StayProduct
 import io.swagger.v3.oas.annotations.media.Schema
 import com.staysync.domain.model.Supplier
@@ -13,26 +12,23 @@ import com.staysync.search.StaySearchResult
  * 네 단위가 응답에서도 같은 묶음으로 보인다. 모양이 같아도 전용 DTO 를 거치는 이유는 도메인 리팩터링이
  * 곧바로 공개 계약 변경이 되지 않게 하기 위해서다.
  *
- * 가용성 노출 정책이 여기서 실현된다: 확정된 것([Availability.Determined])만 싣고 미확정은 제외한다 —
- * 확실하지 않은 재고를 파는 것은 오버부킹으로, 매진이라 단정하는 것은 거짓 정보로 이어지기 때문이다.
+ * 미확정 상품은 여기 도달하지 않는다 — 정규화가 이미 제외해 표준 모델([StayProduct])의 가용성은 언제나
+ * 확정이므로, 이 DTO 는 노출 정책 없이 투영만 한다.
  */
 data class StaySearchResponse(
-    @field:Schema(description = "표준 숙박 상품 목록 — 확정된 상품만 노출(미확정 제외), 확정 매진 포함")
+    @field:Schema(description = "표준 숙박 상품 목록 — 확정된 상품만 노출(미확정은 정규화에서 제외), 확정 매진 포함")
     val stayProducts: List<StayProductResponse>,
     @field:Schema(description = "조회에 실패한 공급사와 사유 — 비어 있으면 전체 성공")
     val errors: List<SupplierErrorResponse>,
 ) {
     companion object {
         fun from(result: StaySearchResult): StaySearchResponse = StaySearchResponse(
-            // toWire 가 null 을 주는 상품(미확정)은 응답에서 빠진다
-            stayProducts = result.stays.mapNotNull { toWire(it) },
+            stayProducts = result.stays.map { toWire(it) },
             errors = result.errors.map { SupplierErrorResponse(it.supplier, it.reason) },
         )
 
-        private fun toWire(product: StayProduct): StayProductResponse? {
-            // 노출 정책의 전부 — Determined(가능·확정 매진)만 통과하고, 캐스트가 실패하는 경우는
-            // Undetermined 뿐이다. 이후 코드는 스마트 캐스트로 availableRooms 에 바로 접근한다
-            val availability = product.availability as? Availability.Determined ?: return null
+        private fun toWire(product: StayProduct): StayProductResponse {
+            val availability = product.availability
             return StayProductResponse(
                 property = PropertyResponse(
                     id = product.property.id,
@@ -46,8 +42,8 @@ data class StaySearchResponse(
                 breakfastIncluded = product.breakfastIncluded, // 돈이 아니라 상품의 조건 — price 밖, 상품 직속
                 availability = AvailabilityResponse(
                     // 서버 보장 파생값 — 클라이언트마다 "0이면 매진"을 제각각 구현하다 틀리는 것을 막는다
-                    isAvailable = availability is Availability.Available,
-                    availableRooms = availability.availableRooms, // SoldOut 이면 getter 가 0을 내놓는다
+                    isAvailable = availability.isAvailable,
+                    availableRooms = availability.availableRooms, // 0 = 확정 매진
                 ),
                 supplier = product.supplier,
                 price = PriceResponse(

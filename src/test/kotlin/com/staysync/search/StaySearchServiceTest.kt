@@ -66,7 +66,7 @@ class StaySearchServiceTest {
         assertEquals(3L, stay.property.id)
         assertEquals("Riverside Hotel Seoul", stay.property.name)
         assertEquals(3L, stay.roomType.id)
-        assertEquals(Availability.Available(1), stay.availability) // 병목 최소값: [3, 1] → 1
+        assertEquals(Availability(availableRooms = 1), stay.availability) // 병목 최소값: [3, 1] → 1
         assertEquals(452_000L, stay.price.totalAmount)
         assertEquals(226_000L, stay.price.averageNightlyAmount) // 2박 내림
         assertEquals(Supplier.B, stay.supplier)
@@ -85,14 +85,16 @@ class StaySearchServiceTest {
     }
 
     @Test
-    fun `날짜 누락 - 미확정으로 조립하되 결과에서 빼지 않는다, 노출 여부는 웹 계층의 몫`() {
+    fun `날짜 누락 - 미확정은 정규화에서 제외되고 오류도 아니다`() {
         val partial = B_PRODUCT.copy(remainingByDate = mapOf(LocalDate.of(2026, 9, 1) to 3)) // 09-02 누락
         val clientB = FakeSupplierClient(Supplier.B) { Mono.just(listOf(partial)) }
 
         val result = service(listOf(clientB), mapOf(Supplier.B to plan(Supplier.B, listOf("B77120"), B_LOOKUP)))
             .search(criteria)
 
-        assertEquals(Availability.Undetermined, result.stays.single().availability)
+        // 표준 모델에는 확정 가용성만 도달한다 — 미확정은 미매핑 제외와 같은 층위의 조용한 제외
+        assertTrue(result.stays.isEmpty())
+        assertTrue(result.errors.isEmpty())
     }
 
     @Test
