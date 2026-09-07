@@ -150,6 +150,56 @@ class SupplierBClientTest {
     }
 
     @Test
+    fun `값 결함 항목은 그 항목만 제외된다 - 변환 관문이 통화 공백과 음수 재고를 잡는다`() {
+        enqueueJson(
+            """
+            {
+              "resultCode": "0000", "resultMessage": "SUCCESS",
+              "data": { "items": [
+                { "propertyId": "B77120", "propertyName": "정상", "roomId": "R-401",
+                  "roomName": "Deluxe Twin Room", "maxOccupancy": 2, "breakfastIncluded": true, "currency": "KRW",
+                  "totalPrice": 452000, "taxIncluded": true,
+                  "inventory": [ { "date": "2026-09-01", "remainingRooms": 3 } ] },
+                { "propertyId": "B77121", "propertyName": "통화 공백", "roomId": "R-402",
+                  "roomName": "Suite", "maxOccupancy": 2, "breakfastIncluded": true, "currency": " ",
+                  "totalPrice": 500000, "taxIncluded": true,
+                  "inventory": [ { "date": "2026-09-01", "remainingRooms": 3 } ] },
+                { "propertyId": "B77122", "propertyName": "음수 재고", "roomId": "R-403",
+                  "roomName": "Family Room", "maxOccupancy": 4, "breakfastIncluded": true, "currency": "KRW",
+                  "totalPrice": 600000, "taxIncluded": true,
+                  "inventory": [ { "date": "2026-09-01", "remainingRooms": -1 } ] }
+              ] }
+            }
+            """.trimIndent(),
+        )
+
+        val products = client.fetchStayProducts(query).block()!!
+
+        assertEquals(listOf("B77120"), products.map { it.supplierPropertyCode })
+    }
+
+    @Test
+    fun `결함 숙소는 목록 변환에서 제외된다 - 이름 공백 숙소`() {
+        enqueueJson(
+            """
+            {
+              "resultCode": "0000", "resultMessage": "SUCCESS",
+              "data": { "items": [
+                { "propertyId": "B77120", "propertyName": "Riverside Hotel Seoul",
+                  "rooms": [ { "roomId": "R-401", "roomName": "Deluxe Twin Room", "maxOccupancy": 2 } ] },
+                { "propertyId": "B77121", "propertyName": " ",
+                  "rooms": [ { "roomId": "R-402", "roomName": "Suite", "maxOccupancy": 2 } ] }
+              ] }
+            }
+            """.trimIndent(),
+        )
+
+        val properties = client.fetchProperties()
+
+        assertEquals(listOf("B77120"), properties.map { it.supplierPropertyCode })
+    }
+
+    @Test
     fun `성공 코드인데 data 가 없으면 계약 위반 실패다 - 정상 빈 결과는 data 안의 빈 items 로 온다`() {
         enqueueJson("""{"resultCode":"0000","resultMessage":"SUCCESS","data":null}""")
 

@@ -14,6 +14,10 @@ import java.time.LocalDate
  * 팔지 않는다" — 엄격 판정의 실패는 기회 손실(우리 손해)이고 관대 판정의 실패는 오버부킹(고객 피해)이라
  * 비대칭이 명확하다. 다만 매진이라 단정하는 것도 거짓이므로, 확정 매진([Availability.SoldOut])과는
  * 구분해 돌려준다.
+ *
+ * 입력 전제: 잔여 수는 비음수다 — 음수 잔여는 변환 관문(ConversionGate)이 결함으로 걸러 여기 도달하지
+ * 않는다 (docs/QUARANTINE.md). 이 정책이 음수를 따로 다루지 않는 이유이며, 관문의 해당 검사를 없애려면
+ * 이 전제부터 다시 세워야 한다.
  */
 object AvailabilityPolicy {
 
