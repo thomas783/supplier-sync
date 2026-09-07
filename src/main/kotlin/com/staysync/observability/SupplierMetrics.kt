@@ -80,6 +80,8 @@ class SupplierMetrics(
         t is SupplierCallException && t.timedOut -> "timeout"
         // 한도 초과를 failure 에 묻지 않는 이유: 429 관측이 대규모 대응(캐시 등)의 전환 트리거다 (docs/INTEGRATION.md)
         t is SupplierCallException && t.rateLimited -> "rate_limited"
+        // 역직렬화 실패는 공급사 스키마 드리프트의 신호라 일반 실패와 분리해 조기 관측한다
+        t is SupplierCallException && t.decodeError -> "decode_error"
         else -> "failure"
     }
 

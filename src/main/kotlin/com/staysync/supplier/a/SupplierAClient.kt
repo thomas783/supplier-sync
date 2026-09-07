@@ -72,13 +72,20 @@ class SupplierAClient(
             .retrieve()
             .bodyToMono<SupplierABaseResponse<SupplierAAvailabilityItem>>()
             .map { response ->
+                val stayDates = query.stayDates()
                 response.items.mapNotNull { item ->
-                    // 전체 격리 기록 자리(미구현, docs/QUARANTINE.md) — 원시 페이로드 보존은 어댑터만 안다:
+                    // 요청 기간의 날짜만 남긴다 — 총액이 요청 박수와 무관하게 부풀지 않게, 가용성 판정이
+                    // 기간 밖 날짜를 무시하는 것과 같은 기준(docs/DOMAIN_MODEL.md 예약 가능 판정)
+                    val rates = item.dailyRates.filter { it.date in stayDates }
+                    // 결함 판정은 관문에 맡긴다 — 중복 날짜(rawDates)·일자별 음수 요금(rawAmounts)처럼 합산·
+                    // 병합으로 사라지는 원자료를 함께 넘긴다. 전체 격리 기록 자리(미구현, docs/QUARANTINE.md):
                     // quarantineRecorder.record(supplier, rawPayload = item, requestContext = query)
-                    // 사유별 카운터는 onDefect 로 기록한다 — 검색 경로 결함이 대시보드에 보이게
-                    ConversionGate.admit(supplier, rawDates = item.dailyRates.map { it.date }, product = item.toStayProduct()) {
-                        metrics.recordQuarantined(supplier, it)
-                    }
+                    ConversionGate.admit(
+                        supplier,
+                        rawDates = rates.map { it.date },
+                        product = item.toStayProduct(rates),
+                        rawAmounts = rates.flatMap { listOf(it.nightlyRate, it.taxAmount) },
+                    ) { metrics.recordQuarantined(supplier, it) }
                 }
             }
             .onErrorMap { toSupplierError(supplier, AVAILABILITY_ENDPOINT, it) }
@@ -95,7 +102,8 @@ class SupplierAClient(
         },
     )
 
-    private fun SupplierAAvailabilityItem.toStayProduct(): SupplierStayProduct = SupplierStayProduct(
+    // 요청 기간으로 필터링된 dailyRates(rates)로 조립한다 — 총액·잔여 모두 요청 숙박일 기준
+    private fun SupplierAAvailabilityItem.toStayProduct(rates: List<SupplierADailyRate>): SupplierStayProduct = SupplierStayProduct(
         supplierPropertyCode = hotelCode,
         propertyName = hotelName,
         supplierRoomTypeCode = roomTypeCode,
@@ -104,8 +112,8 @@ class SupplierAClient(
         breakfastIncluded = breakfastIncluded,
         currency = currency,
         // 세금 별도(net) → gross 총액 = Σ(nightlyRate + taxAmount)
-        grossTotalAmount = dailyRates.sumOf { it.nightlyRate + it.taxAmount },
-        remainingByDate = dailyRates.associate { it.date to it.remainingRooms },
+        grossTotalAmount = rates.sumOf { it.nightlyRate + it.taxAmount },
+        remainingByDate = rates.associate { it.date to it.remainingRooms },
     )
 
     companion object {

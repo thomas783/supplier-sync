@@ -22,9 +22,10 @@ enum class DefectReason {
  * `PropertyMappingService` 에서 [defectOf] 로(제외하며 `skipped` 로 집계). 뒤쪽 값 객체 불변식은
  * 제거하지 않고 관문 호출 누락을 드러내는 감시자로 남긴다.
  *
- * 음수 재고는 뒤쪽에서 예외가 아니라 매진으로 조용히 흡수되던 케이스라 여기서 잡고, 중복 날짜는 Map 으로
- * 접히기 전의 원시 날짜 목록에서만 보이므로 어댑터가 rawDates 를 함께 넘긴다. Spring 에 의존하지 않는
- * 순수 객체다.
+ * 음수 재고는 뒤쪽에서 예외가 아니라 매진으로 조용히 흡수되던 케이스라 여기서 잡는다. 합산·병합으로
+ * 사라지는 원자료는 어댑터가 함께 넘긴다 — 중복 날짜는 Map 으로 접히기 전의 [rawDates] 로, 일자별 음수
+ * 요금은 합산되기 전의 [rawAmounts] 로(합계가 양수여도 일자별 음수를 잡기 위해). Spring 에 의존하지
+ * 않는 순수 객체다.
  */
 object ConversionGate {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -32,16 +33,20 @@ object ConversionGate {
     /**
      * 검색 경로의 관문 통과 허가 — 결함이면 warn 을 남기고 null(그 항목만 제외), 통과면 그대로 돌려준다.
      * @param rawDates Map 으로 접히기 전의 원시 날짜 목록 — 중복 날짜 결함은 여기서만 보인다
+     * @param rawAmounts 합산 전의 일자별 금액(단가·세금액) — 합계가 양수여도 일자별 음수를 잡는다.
+     *   일자별 금액이 없는 공급사(B: 기간 총액만)는 비운다(총액 음수는 [defectOf] 가 잡는다)
      * @param onDefect 결함 사유 콜백 — 호출부가 지표 집계 등을 붙인다(순수 객체 유지를 위한 주입점)
      */
     fun admit(
         supplier: Supplier,
         rawDates: List<LocalDate>,
         product: SupplierStayProduct,
+        rawAmounts: List<Long> = emptyList(),
         onDefect: (DefectReason) -> Unit = {},
     ): SupplierStayProduct? {
         val defect = when {
             rawDates.size != rawDates.distinct().size -> DefectReason.DUPLICATE_DATE
+            !rawAmounts.all { DomainInvariants.validAmount(it) } -> DefectReason.INVALID_PRICE
             else -> defectOf(product)
         } ?: return product
         onDefect(defect)

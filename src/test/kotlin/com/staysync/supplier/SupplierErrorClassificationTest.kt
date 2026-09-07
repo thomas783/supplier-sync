@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.springframework.core.codec.DecodingException
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.web.reactive.function.client.WebClientResponseException
@@ -70,6 +71,35 @@ class SupplierErrorClassificationTest {
     @Test
     fun `501 - 결정적 5xx 는 재시도하지 않는다`() {
         assertFalse(toSupplierError(Supplier.A, "/a/v1/availability", http(501)).retryable)
+    }
+
+    @Test
+    fun `502 504 - 계약 밖 전송 경로 코드도 재시도 대상이다 - 앞단 인프라 순단`() {
+        // RETRYABLE_STATUSES 의 근거 있는 경계값 — 집합에서 빠지는 회귀를 막는다
+        assertTrue(toSupplierError(Supplier.A, "/a/v1/availability", http(502)).retryable)
+        assertTrue(toSupplierError(Supplier.A, "/a/v1/availability", http(504)).retryable)
+    }
+
+    @Test
+    fun `400 401 - 잘못된 요청·인증 실패는 재시도하지 않는다`() {
+        assertFalse(toSupplierError(Supplier.A, "/a/v1/availability", http(400)).retryable)
+        assertFalse(toSupplierError(Supplier.A, "/a/v1/availability", http(401)).retryable)
+    }
+
+    @Test
+    fun `역직렬화 실패는 재시도 불가이자 별도 decode 신호로 분류된다`() {
+        val ex = toSupplierError(Supplier.A, "/a/v1/availability", DecodingException("cannot decode"))
+
+        assertFalse(ex.retryable)
+        assertTrue(ex.decodeError)
+        assertTrue(ex.reason.contains("decode"))
+    }
+
+    @Test
+    fun `역직렬화 실패가 원인 예외로 감싸여 와도 decode 로 분류된다`() {
+        val ex = toSupplierError(Supplier.B, "/b/api/search", RuntimeException(DecodingException("bad json")))
+
+        assertTrue(ex.decodeError)
     }
 
     private fun http(status: Int): WebClientResponseException = WebClientResponseException.create(
