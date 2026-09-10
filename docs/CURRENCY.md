@@ -17,15 +17,21 @@
 ## 표준 모델 확장 — Price 에 원가·환율을 나란히 보존
 
 `Price` 에 환산가(KRW)와 원가(로컬)를 함께 담고, 쓴 환율까지 남겨 변환을 추적·재현 가능하게 합니다.
+금액 항목(총액·평균 1박가)마다 "환산가 + 원가"가 한 쌍으로 붙으므로, 그 쌍을 `MoneyPair` 값 타입으로
+묶어 필드가 항목 수의 두 배로 불어나는 것을 막습니다. `currency` 와 `exchangeRate` 는 한 `Price` 안에서
+두 금액이 언제나 공유하는(같은 상품·같은 검색 시점·같은 원 통화) 값이라 `Price` 수준에 한 벌만 둡니다.
 
-| 필드 | 타입 | 의미 |
+| `Price` 필드 | 타입 | 의미 |
 |---|---|---|
-| `totalAmount` | `Long` (KRW) | 환산 총액 — **비교·정렬·표시용 단일 기준** |
-| `averageNightlyAmount` | `Long` (KRW) | 환산 평균 1박가 = 환산 총액 ÷ 박수(내림) |
-| `originalTotalAmount` | `BigDecimal` (로컬) | 공급사가 준 원 통화 총액 — **실제 청구에 가까운 값** |
-| `originalAverageNightlyAmount` | `BigDecimal` (로컬) | 원 통화 평균 1박가 = 원가 총액 ÷ 박수 |
-| `exchangeRate` | `BigDecimal` | 적용 환율(로컬 → KRW) — 검색 시점 스냅샷, 변환 추적용 |
 | `currency` | `String` | **원 통화** ISO 4217 코드(환산가는 언제나 KRW라 별도 표기 불필요) |
+| `exchangeRate` | `BigDecimal` | 적용 환율(로컬 → KRW) — 검색 시점 스냅샷, 두 금액이 공유, 변환 추적용 |
+| `totalAmount` | `MoneyPair` | 총액 (환산 KRW + 원 통화) |
+| `averageNightlyAmount` | `MoneyPair` | 평균 1박가 = 총액 ÷ 박수(내림) |
+
+| `MoneyPair` 필드 | 타입 | 의미 |
+|---|---|---|
+| `krwAmount` | `Long` (KRW) | 환산가 — **비교·정렬·표시용 단일 기준** |
+| `originalAmount` | `BigDecimal` (로컬) | 공급사가 준 원 통화 금액 — **실제 청구에 가까운 값** |
 
 - **환산가와 원가를 둘 다 두는 이유**: 환산가(KRW)는 공급사 횡단 비교의 공통 축이고, 원가(로컬)는
   고객이 실제로 청구받는 값에 가깝습니다 — 환산가만 두면 "왜 카드값이 표시가와 다른가"를 설명할 수
@@ -33,9 +39,9 @@
 - **환율을 저장하는 이유**: 환산은 검색 시점 환율의 함수라, 나중에 "이 KRW 값이 어떻게 나왔나"를
   재현하려면 그 시점 환율이 있어야 합니다(감사·디버깅). 환산가 = 원가 × 환율(내림)이 레코드 안에서
   닫힙니다.
-- **KRW 공급사에서의 자연 degrade**: 원 통화가 KRW 면 `exchangeRate = 1`, `originalTotalAmount =
-  totalAmount`(BigDecimal 표현), `currency = KRW`. 특수 분기 없이 같은 구조로 동작하므로, 외화 도입
-  전에도 이 모델을 그대로 쓸 수 있습니다.
+- **KRW 공급사에서의 자연 degrade**: 원 통화가 KRW 면 `exchangeRate = 1`, 각 `MoneyPair` 의
+  `originalAmount = krwAmount`(BigDecimal 표현), `currency = KRW`. 특수 분기 없이 같은 구조로 동작하므로,
+  외화 도입 전에도 이 모델을 그대로 쓸 수 있습니다.
 
 ## 표현 타입의 근거 — 로컬 BigDecimal, 표준 KRW Long
 
@@ -53,11 +59,12 @@
 
 ```
 어댑터: 원 통화 BigDecimal + currency  ──정규화──►  Price
-                                                   ├─ originalTotalAmount = 원 통화 BigDecimal
+                                                   ├─ currency = 원 통화 코드
                                                    ├─ exchangeRate = provider.rate(currency)
-                                                   ├─ totalAmount(KRW Long) = (원가 × 환율).setScale(0, FLOOR)
-                                                   ├─ originalAverageNightlyAmount = 원가 ÷ 박수 (BigDecimal)
-                                                   └─ averageNightlyAmount(KRW Long) = totalAmount ÷ 박수 (내림)
+                                                   ├─ totalAmount.originalAmount = 원 통화 BigDecimal
+                                                   ├─ totalAmount.krwAmount(KRW Long) = (원가 × 환율).setScale(0, FLOOR)
+                                                   ├─ averageNightlyAmount.originalAmount = 원가 ÷ 박수 (BigDecimal)
+                                                   └─ averageNightlyAmount.krwAmount(KRW Long) = totalAmount.krwAmount ÷ 박수 (내림)
 ```
 
 - **내림(FLOOR)의 함의**: 환산 KRW 는 **비교·표시용 figure 이지 실제 청구액이 아닙니다** — 실제 청구는
