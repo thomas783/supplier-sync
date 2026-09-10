@@ -35,7 +35,11 @@ services:
     ports:
       - "127.0.0.1:9090:9090"
     healthcheck:
-      # Mock 은 웹 스타터만 의존해 actuator 가 없다 — 실제 픽스처 엔드포인트로 기동을 판정
+      # Mock 은 웹 스타터만 의존해 actuator 가 없다 — 실제 픽스처 엔드포인트로 기동을 판정.
+      # 하필 목록 엔드포인트인 이유: 모드 독립 정적 200 이라 liveness 만 반영한다. 장애 주입
+      # (error/no-response)은 /a/v1/availability·/b/api/search 에만 걸리므로, 목록을 200 정적으로
+      # 유지하는 한 error 모드 시연 중에도 헬스체크가 안 깨진다 — 재고 엔드포인트에 걸면 error 모드의
+      # 503 으로 헬스체크가 깨지고 service_healthy 에 묶인 app 기동까지 막힌다.
       test: ["CMD", "curl", "-fs", "http://localhost:9090/a/v1/hotels"]
       interval: 5s
       timeout: 3s
