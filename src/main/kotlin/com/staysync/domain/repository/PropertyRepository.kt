@@ -12,6 +12,12 @@ interface PropertyRepository : JpaRepository<PropertyEntity, Long> {
         supplierPropertyCode: String,
     ): PropertyEntity?
 
+    /** 청크 단위 upsert 에서 한 청크의 기존 매핑을 한 번에 되찾기 위한 벌크 자연키 조회. */
+    fun findAllBySupplierAndSupplierPropertyCodeIn(
+        supplier: Supplier,
+        supplierPropertyCodes: Collection<String>,
+    ): List<PropertyEntity>
+
     /** 검색 시 공급사별 대상 숙소 코드를 꺼내기 위한 조회. */
     fun findAllBySupplier(supplier: Supplier): List<PropertyEntity>
 }

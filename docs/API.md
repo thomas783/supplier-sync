@@ -153,10 +153,14 @@ POST /internal/properties/sync
 반환합니다. 계약 밖 데이터(빈 이름 등)는 그 레코드만 건너뛰고 `skipped`로 집계합니다 — 깨진 표시를
 노출하느니 그 숙소가 검색에서 빠지는 쪽을 택한, 가용성 판정과 같은 보수 원칙입니다.
 
+저장은 상품 단위 청크로 쪼개 청크마다 독립 트랜잭션으로 커밋합니다. 한 청크가 실패하면 그 청크만
+롤백하고 나머지는 계속 반영하며(best-effort), 반영되지 못한 레코드 수를 `failed`로 집계하고 그 공급사는
+`ok=false`로 표시합니다. 멱등하므로 다음 실행에서 실패분이 재처리되어 수렴합니다.
+
 ```json
 [
-  { "supplier": "A", "ok": true, "properties": 2, "roomTypes": 2, "skipped": 0, "error": null },
-  { "supplier": "B", "ok": true, "properties": 1, "roomTypes": 1, "skipped": 0, "error": null }
+  { "supplier": "A", "ok": true, "properties": 2, "roomTypes": 2, "skipped": 0, "failed": 0, "error": null },
+  { "supplier": "B", "ok": true, "properties": 1, "roomTypes": 1, "skipped": 0, "failed": 0, "error": null }
 ]
 ```
 

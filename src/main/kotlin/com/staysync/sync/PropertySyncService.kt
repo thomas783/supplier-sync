@@ -29,7 +29,8 @@ import kotlin.concurrent.withLock
  *   트랜잭션 경계 안에서 수행한다 — DB 커넥션을 원격 I/O 동안 잡고 있지 않는다.
  *
  * 실패 격리: 한 공급사의 숙소 목록 조회가 실패해도 다른 공급사 동기화는 계속되고, 결과 요약에 공급사별
- * 성공/실패가 드러난다.
+ * 성공/실패가 드러난다. 저장 단계의 청크 단위 부분 실패도 격리한다 — 실패한 청크만 롤백하고 나머지는
+ * 계속 반영하며, 반영되지 못한 레코드 수는 결과의 `failed` 로 집계되고 그 공급사는 `ok=false` 가 된다.
  */
 @Service
 class PropertySyncService(
@@ -55,14 +56,29 @@ class PropertySyncService(
             mappingService.persistMappings(client.supplier, properties)
         }.fold(
             onSuccess = { counts ->
-                log.info(
-                    "property sync ok: supplier={} properties={} roomTypes={} skipped={}",
-                    client.supplier, counts.properties, counts.roomTypes, counts.skipped,
-                )
-                SupplierSyncResult(
-                    client.supplier, ok = true,
-                    properties = counts.properties, roomTypes = counts.roomTypes, skipped = counts.skipped,
-                )
+                // 청크 단위 부분 실패(counts.failed>0)는 저장이 일부만 반영됐다는 뜻이라 ok=false 로 드러낸다 —
+                // 성공한 카운트도 함께 실어 무엇이 반영됐는지 보이게 한다. 멱등 재실행으로 실패분은 수렴한다.
+                if (counts.failed == 0) {
+                    log.info(
+                        "property sync ok: supplier={} properties={} roomTypes={} skipped={}",
+                        client.supplier, counts.properties, counts.roomTypes, counts.skipped,
+                    )
+                    SupplierSyncResult(
+                        client.supplier, ok = true,
+                        properties = counts.properties, roomTypes = counts.roomTypes, skipped = counts.skipped,
+                    )
+                } else {
+                    log.error(
+                        "property sync partial: supplier={} properties={} roomTypes={} skipped={} failed={}",
+                        client.supplier, counts.properties, counts.roomTypes, counts.skipped, counts.failed,
+                    )
+                    SupplierSyncResult(
+                        client.supplier, ok = false,
+                        properties = counts.properties, roomTypes = counts.roomTypes, skipped = counts.skipped,
+                        failed = counts.failed,
+                        error = "partial failure: ${counts.failed} records in failed chunks",
+                    )
+                }
             },
             onFailure = { e ->
                 if (e !is Exception) throw e
@@ -80,5 +96,7 @@ data class SupplierSyncResult(
     val properties: Int = 0,
     val roomTypes: Int = 0,
     val skipped: Int = 0,
+    /** 청크 단위 저장 실패로 반영되지 못한 레코드 수 — 0 이 아니면 부분 실패이며 ok=false. */
+    val failed: Int = 0,
     val error: String? = null,
 )
