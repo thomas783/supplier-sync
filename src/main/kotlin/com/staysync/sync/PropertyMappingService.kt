@@ -36,6 +36,8 @@ class PropertyMappingService(
     transactionManager: PlatformTransactionManager,
     // 한 트랜잭션이 잡는 상품 수의 상한 (application.yml: sync.chunk-size). 실측에 따라 조정한다.
     @Value("\${sync.chunk-size:500}") private val chunkSize: Int,
+    // 청크 트랜잭션의 DB 작업 상한(초, application.yml: sync.chunk-tx-timeout-seconds).
+    @Value("\${sync.chunk-tx-timeout-seconds:30}") private val chunkTxTimeoutSeconds: Int,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -43,7 +45,11 @@ class PropertyMappingService(
     // 트랜잭션). 청크 저장을 별도 빈으로 빼 @Transactional 을 빈 경계로 거는 대안도 있으나, 그 하나를 위해
     // 빈을 늘리지 않고 "청크 = 한 트랜잭션"을 이 자리에서 프로그램적으로 명시한다. 프로그램적 트랜잭션이라
     // 같은 빈 안의 호출이어도 프록시 self-invocation 문제가 없다.
-    private val txTemplate = TransactionTemplate(transactionManager)
+    private val txTemplate = TransactionTemplate(transactionManager).apply {
+        // 네트워크 조회는 트랜잭션 밖(PropertySyncService)이라 이 타임아웃은 순수 DB 작업에만 걸린다 —
+        // DB 스톨(락 경합·느린 쿼리)이 청크를 무한정 붙잡아 스레드를 고갈시키는 것을 막는 상한.
+        timeout = chunkTxTimeoutSeconds
+    }
 
     /**
      * 한 공급사의 숙소 목록을 상품 단위 청크로 나눠 반영하고, 청크별 카운트를 합산해 돌려준다.
