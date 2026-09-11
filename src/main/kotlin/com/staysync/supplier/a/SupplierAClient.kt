@@ -85,7 +85,7 @@ class SupplierAClient(
                         rawDates = rates.map { it.date },
                         product = item.toStayProduct(rates),
                         rawAmounts = rates.flatMap { listOf(it.nightlyRate, it.taxAmount) },
-                    ) { metrics.recordQuarantined(supplier, it) }
+                    ) { metrics.recordQuarantined(supplier, it, "search") }
                 }
             }
             .onErrorMap { toSupplierError(supplier, AVAILABILITY_ENDPOINT, it) }

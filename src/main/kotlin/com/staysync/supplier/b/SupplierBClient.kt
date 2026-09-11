@@ -79,7 +79,7 @@ class SupplierBClient(
                     // quarantineRecorder.record(supplier, rawPayload = item, requestContext = query)
                     // 사유별 카운터는 onDefect 로 기록한다 — 검색 경로 결함이 대시보드에 보이게
                     ConversionGate.admit(supplier, rawDates = item.inventory.map { it.date }, product = item.toStayProduct()) {
-                        metrics.recordQuarantined(supplier, it)
+                        metrics.recordQuarantined(supplier, it, "search")
                     }
                 }
             }

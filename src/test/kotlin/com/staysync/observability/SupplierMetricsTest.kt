@@ -91,12 +91,28 @@ class SupplierMetricsTest {
     }
 
     @Test
-    fun `결함 격리가 사유별로 집계된다`() {
-        metrics.recordQuarantined(Supplier.A, DefectReason.INVALID_PRICE)
-        metrics.recordQuarantined(Supplier.A, DefectReason.INVALID_PRICE)
-        metrics.recordQuarantined(Supplier.A, DefectReason.DUPLICATE_DATE)
+    fun `결함 격리가 사유·경로별로 집계된다`() {
+        metrics.recordQuarantined(Supplier.A, DefectReason.INVALID_PRICE, "search")
+        metrics.recordQuarantined(Supplier.A, DefectReason.INVALID_PRICE, "sync")
+        metrics.recordQuarantined(Supplier.A, DefectReason.DUPLICATE_DATE, "sync")
 
-        assertEquals(2.0, counterValue(SupplierMetrics.QUARANTINED_COUNTER, "supplier", "A", "reason", "INVALID_PRICE"))
-        assertEquals(1.0, counterValue(SupplierMetrics.QUARANTINED_COUNTER, "supplier", "A", "reason", "DUPLICATE_DATE"))
+        // path 태그로 같은 사유(INVALID_PRICE)도 검색·동기화 경로가 갈린다
+        assertEquals(
+            1.0,
+            counterValue(SupplierMetrics.QUARANTINED_COUNTER, "supplier", "A", "reason", "INVALID_PRICE", "path", "search"),
+        )
+        assertEquals(
+            1.0,
+            counterValue(SupplierMetrics.QUARANTINED_COUNTER, "supplier", "A", "reason", "INVALID_PRICE", "path", "sync"),
+        )
+        assertEquals(
+            1.0,
+            counterValue(SupplierMetrics.QUARANTINED_COUNTER, "supplier", "A", "reason", "DUPLICATE_DATE", "path", "sync"),
+        )
+        // 검색 경로에는 DUPLICATE_DATE 가 기록되지 않았다
+        assertEquals(
+            0.0,
+            counterValue(SupplierMetrics.QUARANTINED_COUNTER, "supplier", "A", "reason", "DUPLICATE_DATE", "path", "search"),
+        )
     }
 }
