@@ -114,6 +114,22 @@ class PropertyMappingChunkFailureTest {
         assertTrue(duplicates >= 1.0, "중복 상품 코드가 지표로 관측돼야 한다")
     }
 
+    @Test
+    fun `정상 다중 청크는 경계에서 누락·중복 없이 전량 저장된다`() {
+        // chunk-size=2 → 5개는 [P-1,P-2][P-3,P-4][P-5] 세 청크. 청크 경계에서 빠지거나 겹치지 않고
+        // 전부 커밋되는지 고정한다(실패 없는 happy-path 다중 청크).
+        val properties = (1..5).map { i ->
+            SupplierProperty("P-$i", "숙소 $i", listOf(SupplierRoomType("R1", "룸", 2)))
+        }
+
+        val counts = mappingService.persistMappings(Supplier.A, properties)
+
+        assertEquals(5, counts.properties)
+        assertEquals(5, counts.roomTypes)
+        assertEquals(0, counts.failed)
+        assertEquals(5, propertyRepository.findAllBySupplier(Supplier.A).size)
+    }
+
     companion object {
         // property_name 컬럼(기본 VARCHAR(255))을 넘겨 저장 시 DB 제약 위반을 유발한다 — 앱 검증(공백·정원)은
         // 통과하지만 DB INSERT 에서 실패하는 "청크 단위 저장 실패"를 결정적으로 재현하는 수단이다.
