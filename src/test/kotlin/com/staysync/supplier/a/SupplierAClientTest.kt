@@ -42,7 +42,9 @@ class SupplierAClientTest {
         connectTimeoutMs = 1000,
         searchResponseTimeoutMs = 500,
         syncResponseTimeoutMs = 3000, // 기본(500ms)과 달리 두어 요청 단위 오버라이드 적용을 검증한다
-        maxConcurrentCalls = 16,
+        searchDeadlineMs = 10_000,
+        maxConnections = 32,
+        pendingAcquireTimeoutMs = 2000,
         a = SupplierProperties.Endpoint(baseUrl = "unused", apiKey = "unused"),
         b = SupplierProperties.Endpoint(baseUrl = "unused", apiKey = "unused"),
     )

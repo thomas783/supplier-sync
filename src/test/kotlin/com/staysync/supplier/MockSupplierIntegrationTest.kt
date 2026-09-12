@@ -81,7 +81,9 @@ class MockSupplierIntegrationTest {
         connectTimeoutMs = 1000,
         searchResponseTimeoutMs = 5000,
         syncResponseTimeoutMs = 5000,
-        maxConcurrentCalls = 16,
+        searchDeadlineMs = 10_000,
+        maxConnections = 32,
+        pendingAcquireTimeoutMs = 2000,
         a = SupplierProperties.Endpoint(baseUrl = "unused", apiKey = "unused"),
         b = SupplierProperties.Endpoint(baseUrl = "unused", apiKey = "unused"),
     )
