@@ -31,9 +31,15 @@ supplier:
   # 목록 payload 가 크고 지연에 둔감한 배치 성격을 반영한 값
   search-response-timeout-ms: 5000
   sync-response-timeout-ms: 10000
-  # 재고·요금 병렬 조회의 동시 호출 상한 — 청크 수는 숙소 수에 비례해 커지므로 상한이 없으면
-  # 공급사에 수백 개의 동시 요청이 몰릴 수 있다 (docs/INTEGRATION.md)
-  max-concurrent-calls: 16
+  # 공급사별 동시 호출 상한(bulkhead)은 resilience4j.bulkhead 가 단일 원천 — 검색 팬아웃이 그 값을 읽어
+  # 논블로킹으로 큐잉한다. 여기 supplier 절에는 두지 않아 한 수가 두 곳에 갈라지지 않게 한다.
+  # 검색 전체(e2e) 데드라인 — 느린 공급사가 전체 응답을 끌지 않게 하는 상한. 도착분은 유지하고 미완은 TIMEOUT.
+  # 응답 타임아웃(5s)보다 커야 최소 한 번의 시도가 끝날 수 있다. 출발값 — 실측 p95/p99 후 조정 (docs/INTEGRATION.md)
+  search-deadline-ms: 8000
+  # 공급사별 커넥션 풀 상한. bulkhead(8)보다 커야 전송 계층이 숨은 병목이 되지 않는다(재시도 재구독의 순간 겹침 여유).
+  max-connections: 16
+  # 풀에서 커넥션을 얻기까지 대기 상한 — 응답 타임아웃(5s)보다 짧아야 풀 고갈이 늦은 타임아웃으로 위장되지 않는다.
+  pending-acquire-timeout-ms: 2000
   # base URL·키는 로컬 Mock 공급사 서버 기준 값 — 실제 연동이라면 환경별 외부 주입이 원칙
   a:
     base-url: http://localhost:9090
@@ -84,6 +90,21 @@ resilience4j:
         # 결과를 주므로, 끊으려면 만성이라는 더 강한 증거를 요구한다. 값은 출발값 — 지표 후 조정
         slow-call-duration-threshold: 2s
         slow-call-rate-threshold: 80
+    instances:
+      A:
+        base-config: default
+      B:
+        base-config: default
+  bulkhead:
+    configs:
+      default:
+        # 공급사별 동시 호출 상한의 단일 원천 — 전역이 아니라 공급사마다 독립. 청크 수는 숙소 수에 비례해
+        # 커지므로 상한이 없으면 수백 요청이 몰리고, 전역 하나면 한 공급사가 슬롯을 독점해 다른 공급사가 굶는다.
+        # 검색 팬아웃(Reactor flatMap)이 이 값을 읽어 논블로킹으로 큐잉하고, 여기 bulkhead 는 같은 상한을
+        # 세마포어로 선언·계측한다. max-wait-duration 0 — 팬아웃이 이미 이 수로 구독을 제한하므로 권한은 항상
+        # 있고, 대기 블로킹(이벤트 루프 위험)을 피한다. 부등식: max-concurrent-calls < supplier.max-connections.
+        max-concurrent-calls: 8
+        max-wait-duration: 0
     instances:
       A:
         base-config: default

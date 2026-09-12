@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
+import java.time.Duration
 import java.time.LocalDate
 
 /**
@@ -25,6 +26,12 @@ import java.time.LocalDate
  * 공급사·청크를 논블로킹으로 병렬 조회 → 응답을 표준 모델로 정규화 → 병합. 청크 하나의 실패는
  * [ChunkOutcome.Failure] 로 흡수돼 스트림을 죽이지 않는다 — 한 공급사가 실패해도 나머지 결과로 응답하고
  * 실패 사실은 errors 로 드러난다.
+ *
+ * 팬아웃은 **공급사별로 격리**된다 — 공급사 그룹끼리는 병렬로 흐르되 한 공급사의 청크 동시성은 그 공급사의
+ * 상한(bulkhead 설정이 단일 원천, [SupplierResilience.searchConcurrency])까지만 열려, 한 공급사가 동시성
+ * 슬롯을 독점해 다른 공급사를 굶기지 못한다. 그리고 전체에 e2e 데드라인([searchDeadline])을 걸어, 느린
+ * 공급사가 응답을 무한정 끌지 않게
+ * 한다 — 데드라인 시점에 도착한 결과는 유지하고 미완 공급사는 TIMEOUT 으로 채운다(부분 응답).
  */
 @Service
 class StaySearchService(
@@ -35,25 +42,33 @@ class StaySearchService(
     supplierProperties: SupplierProperties,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
-    private val maxConcurrentCalls = supplierProperties.maxConcurrentCalls
+    private val searchDeadline = Duration.ofMillis(supplierProperties.searchDeadlineMs)
 
     fun search(criteria: StaySearchCriteria): StaySearchResult {
         val stayDates = criteria.stayDates()
 
-        // DB 읽기 국면 — 원격 호출 전에 매핑 읽기(readOnly 트랜잭션)를 전부 끝내고,
-        // 아직 실행되지 않은 cold Mono 작업 목록만 손에 남긴다
-        val tasks = clients.flatMap { client ->
-            val plan = mappingQueryService.loadPlan(client.supplier) ?: return@flatMap emptyList()
-            buildTasks(client, plan, criteria, stayDates)
-        }
+        // DB 읽기 국면 — 원격 호출 전에 매핑 읽기(readOnly 트랜잭션)를 전부 끝내고, 공급사별로 아직 실행되지
+        // 않은 cold Mono 작업 목록만 손에 남긴다. 공급사별로 묶어 두어야 뒤의 팬아웃에서 동시성을 격리한다
+        val tasksBySupplier: Map<Supplier, List<Mono<ChunkOutcome>>> = clients.mapNotNull { client ->
+            val plan = mappingQueryService.loadPlan(client.supplier) ?: return@mapNotNull null
+            client.supplier to buildTasks(client, plan, criteria, stayDates)
+        }.toMap()
         // 매핑이 비어 있으면 오류가 아니라 "결과 없음"이다 (docs/API.md)
-        if (tasks.isEmpty()) return StaySearchResult(emptyList(), emptyList())
+        if (tasksBySupplier.isEmpty()) return StaySearchResult(emptyList(), emptyList())
 
-        val outcomes = Flux.fromIterable(tasks)
-            // 구독 = 실행. 여기서 처음 HTTP 가 나간다 — 동시 구독은 상한(yml)까지, 결과는 완료 순서로
-            // 도착한다(순서 비보장). 실패는 이미 Failure 값이라 형제 청크를 취소시키는 에러가 흐르지 않는다
-            .flatMap({ it }, maxConcurrentCalls)
-            // 모든 청크가 결론(성공/실패 값)에 이를 때까지 모으는 의도된 장벽
+        val outcomes = Flux.fromIterable(tasksBySupplier.entries)
+            // 공급사 그룹은 서로 병렬로 흐르되(바깥 flatMap), 한 공급사의 청크는 그 공급사의 동시성 상한까지만
+            // 동시에 구독된다(안쪽 flatMap = 논블로킹 큐잉). 상한은 bulkhead 설정이 단일 원천이다
+            // (resilience.searchConcurrency). 이 공급사별 격리가 bulkhead 의 실질이다 — 한 공급사가 슬롯을
+            // 독점해도 다른 공급사의 동시성은 줄지 않는다. 실패는 이미 Failure 값이라 형제 청크를 취소시키는
+            // 에러가 흐르지 않는다
+            .flatMap({ (supplier, monos) ->
+                Flux.fromIterable(monos).flatMap({ it }, resilience.searchConcurrency(supplier))
+            }, tasksBySupplier.size)
+            // e2e 데드라인 — 이 시점까지 도착한 outcome 만 취하고 미완 청크는 취소한다(스레드·커넥션 해제).
+            // collectList().timeout() 은 도착분까지 버리므로, 도착분을 보존하는 take(deadline) 를 쓴다
+            .take(searchDeadline)
+            // 모든 청크가 결론에 이르거나 데드라인이 끊을 때까지 모으는 의도된 장벽
             .collectList()
             // 논블로킹 팬아웃이 값으로 수렴하는 유일한 지점 — MVC 컨트롤러가 동기 호출하는 경계다
             .block()
@@ -62,9 +77,17 @@ class StaySearchService(
 
         // 여기부터는 리액티브가 끝난 일반 컬렉션 조작 — sealed 타입으로 성공/실패를 가른다
         val stays = outcomes.filterIsInstance<ChunkOutcome.Success>().flatMap { it.products }
-        val errors = outcomes.filterIsInstance<ChunkOutcome.Failure>()
+        val failures = outcomes.filterIsInstance<ChunkOutcome.Failure>()
             .map { SupplierError(it.supplier, it.reason) }
-            .distinct() // 같은 공급사의 여러 청크가 같은 사유로 실패하면 하나로 합친다
+        // 데드라인 안에 결론에 이른 outcome 수가 기대 청크 수보다 적으면 그 공급사는 미완 — TIMEOUT 으로
+        // 채운다. 도착한 청크의 성공분은 그대로 남으므로 부분 응답이다(한 공급사가 결과와 TIMEOUT 을 함께
+        // 가질 수 있다). 실패(Failure)로 결론난 청크는 도착한 것이라 미완에 포함되지 않는다
+        val completedBySupplier = outcomes.groupingBy { it.supplier }.eachCount()
+        val timedOut = tasksBySupplier
+            .filter { (supplier, monos) -> completedBySupplier.getOrDefault(supplier, 0) < monos.size }
+            .map { (supplier, _) -> SupplierError(supplier, "search deadline exceeded") }
+        // 같은 공급사의 여러 청크가 같은 사유로 실패하면 하나로 합친다
+        val errors = (failures + timedOut).distinct()
         return StaySearchResult(stays = stays, errors = errors)
     }
 
@@ -143,8 +166,9 @@ class StaySearchService(
     }
 
     private sealed interface ChunkOutcome {
-        data class Success(val supplier: Supplier, val products: List<StayProduct>) : ChunkOutcome
-        data class Failure(val supplier: Supplier, val reason: String) : ChunkOutcome
+        val supplier: Supplier
+        data class Success(override val supplier: Supplier, val products: List<StayProduct>) : ChunkOutcome
+        data class Failure(override val supplier: Supplier, val reason: String) : ChunkOutcome
     }
 
     companion object {

@@ -14,6 +14,7 @@ import com.staysync.supplier.SupplierClient
 import com.staysync.supplier.SupplierProperty
 import com.staysync.supplier.SupplierRoomType
 import com.staysync.supplier.SupplierStayProduct
+import io.github.resilience4j.bulkhead.BulkheadRegistry
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry
 import io.github.resilience4j.retry.RetryConfig
 import io.github.resilience4j.retry.RetryRegistry
@@ -230,6 +231,7 @@ class PropertySyncServiceTest {
                 Supplier.entries.forEach { registry.retry(RetryPath.SYNC.instanceName(it), RetryPath.SYNC.configName) }
             },
             CircuitBreakerRegistry.ofDefaults(),
+            BulkheadRegistry.ofDefaults(),
             SupplierMetrics(SimpleMeterRegistry()),
         )
     }

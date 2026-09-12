@@ -15,6 +15,7 @@ import com.staysync.supplier.SupplierCallException
 import com.staysync.supplier.SupplierClient
 import com.staysync.supplier.SupplierProperty
 import com.staysync.supplier.SupplierStayProduct
+import io.github.resilience4j.bulkhead.BulkheadRegistry
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry
 import io.github.resilience4j.retry.RetryConfig
 import io.github.resilience4j.retry.RetryRegistry
@@ -225,16 +226,55 @@ class StaySearchServiceTest {
         assertTrue(generateSequence(thrown) { it.cause }.any { it is NotImplementedError })
     }
 
+    @Test
+    fun `e2e 데드라인 - 느린 공급사는 TIMEOUT 으로 채우고 도착한 공급사 결과는 유지한다`() {
+        // A 는 데드라인까지 응답이 없고(Mono.never), B 는 즉시 응답. 데드라인이 A 의 미완 청크를 끊고
+        // B 의 도착분은 그대로 남긴다 — 부분 응답(한 공급사가 굶어도 다른 공급사는 반환된다).
+        val slowA = FakeSupplierClient(Supplier.A) { Mono.never() }
+        val fastB = FakeSupplierClient(Supplier.B) { Mono.just(listOf(B_PRODUCT)) }
+        val shortDeadline = SUPPLIER_PROPERTIES.copy(searchDeadlineMs = 200)
+
+        val result = service(
+            listOf(slowA, fastB),
+            mapOf(
+                Supplier.A to plan(Supplier.A, listOf("A-10023")),
+                Supplier.B to plan(Supplier.B, listOf("B77120"), B_LOOKUP),
+            ),
+            props = shortDeadline,
+        ).search(criteria)
+
+        assertEquals(Supplier.B, result.stays.single().supplier) // 도착분 유지
+        assertEquals(SupplierError(Supplier.A, "search deadline exceeded"), result.errors.single()) // 미완은 TIMEOUT
+    }
+
+    @Test
+    fun `e2e 데드라인 - 데드라인 안에 전부 도착하면 TIMEOUT 을 붙이지 않는다`() {
+        // 빠른 완료는 데드라인 전에 스트림이 onComplete 로 끝나므로(take 는 완료가 먼저면 일찍 종료) 미완 없음
+        val fastB = FakeSupplierClient(Supplier.B) { Mono.just(listOf(B_PRODUCT)) }
+        val shortDeadline = SUPPLIER_PROPERTIES.copy(searchDeadlineMs = 200)
+
+        val result = service(
+            listOf(fastB),
+            mapOf(Supplier.B to plan(Supplier.B, listOf("B77120"), B_LOOKUP)),
+            props = shortDeadline,
+        ).search(criteria)
+
+        assertEquals(Supplier.B, result.stays.single().supplier)
+        assertTrue(result.errors.isEmpty()) // 데드라인 여유 있게 도착 → 스푸리어스 TIMEOUT 없음
+    }
+
     private fun service(
         clients: List<SupplierClient>,
         plans: Map<Supplier, SupplierQueryPlan>,
         resilience: SupplierResilience = resilience(),
+        props: SupplierProperties = SUPPLIER_PROPERTIES,
     ) = StaySearchService(
-        clients, FakeMappingQueryService(plans), resilience, SupplierMetrics(SimpleMeterRegistry()), SUPPLIER_PROPERTIES,
+        clients, FakeMappingQueryService(plans), resilience, SupplierMetrics(SimpleMeterRegistry()), props,
     )
 
     // 운영 yml 과 같은 정책(첫 시도 + 재시도 1회, retryable 필터)을 코드로 재현하되 대기는 1ms 로 줄인다.
-    // 서킷은 기본 설정(창 100·최소 100회)이라 명시적으로 open 시키지 않는 한 테스트에 개입하지 않는다
+    // 서킷은 기본 설정(창 100·최소 100회)이라 명시적으로 open 시키지 않는 한 테스트에 개입하지 않는다.
+    // bulkhead 는 기본(동시 25)이라 테스트 규모에서 권한이 늘 있어 개입하지 않는다 — 격리 구조는 팬아웃이 담당
     private fun resilience(circuitBreakerRegistry: CircuitBreakerRegistry = CircuitBreakerRegistry.ofDefaults()) =
         SupplierResilience(
             RetryRegistry.of(
@@ -245,6 +285,7 @@ class StaySearchServiceTest {
                     .build(),
             ),
             circuitBreakerRegistry,
+            BulkheadRegistry.ofDefaults(),
             SupplierMetrics(SimpleMeterRegistry()),
         )
 
@@ -288,7 +329,11 @@ class StaySearchServiceTest {
             connectTimeoutMs = 1000,
             searchResponseTimeoutMs = 5000,
             syncResponseTimeoutMs = 10000,
-            maxConcurrentCalls = 16,
+            // 기본 데드라인은 넉넉히 — 데드라인 발동은 별도 테스트가 짧은 값으로 검증한다. 공급사별 동시성은
+            // resilience(BulkheadRegistry)가 단일 원천이라 여기 두지 않는다
+            searchDeadlineMs = 10_000,
+            maxConnections = 32,
+            pendingAcquireTimeoutMs = 2000,
             a = SupplierProperties.Endpoint(baseUrl = "http://localhost", apiKey = "unused"),
             b = SupplierProperties.Endpoint(baseUrl = "http://localhost", apiKey = "unused"),
         )
