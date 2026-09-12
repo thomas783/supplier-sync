@@ -98,6 +98,47 @@ class StaySearchServiceTest {
     }
 
     @Test
+    fun `정원 초과 - 요청 인원이 객실 정원보다 크면 그 상품은 조용히 제외된다`() {
+        // 객실 정원 2인데 3인 검색 — 공급사가 정원으로 걸러 준다는 보장이 없어 우리 정규화가 방어선을 둔다.
+        val clientB = FakeSupplierClient(Supplier.B) { Mono.just(listOf(B_PRODUCT)) }
+
+        val result = service(listOf(clientB), mapOf(Supplier.B to plan(Supplier.B, listOf("B77120"), B_LOOKUP)))
+            .search(criteria.copy(adults = 3)) // guests = 3 > maxOccupancy 2
+
+        assertTrue(result.stays.isEmpty()) // 오류가 아니라 조용한 제외
+        assertTrue(result.errors.isEmpty())
+    }
+
+    @Test
+    fun `정원 대조는 총원 기준 - 성인만이면 통과할 방도 아동을 더하면 제외된다`() {
+        // 정원 2. adults=2 만이면 통과하지만 children=1 을 더한 총원 3 이라 제외 → 아동이 정원에 산입됨을 고정한다.
+        val clientB = FakeSupplierClient(Supplier.B) { Mono.just(listOf(B_PRODUCT)) }
+
+        val result = service(listOf(clientB), mapOf(Supplier.B to plan(Supplier.B, listOf("B77120"), B_LOOKUP)))
+            .search(criteria.copy(adults = 2, children = 1)) // guests = 3 > maxOccupancy 2
+
+        assertTrue(result.stays.isEmpty())
+        assertTrue(result.errors.isEmpty())
+    }
+
+    @Test
+    fun `정원 경계 - 총원이 정원과 같으면 포함된다`() {
+        // 총원 3 = 정원 3 → 포함(경계). 기준 정원은 카탈로그 스냅샷의 RoomType.maxOccupancy 다(상품값이 아니라).
+        val lookup = MappingLookup(
+            supplier = Supplier.B,
+            propertyByCode = mapOf("B77120" to Property(id = 3, name = "Riverside Hotel Seoul")),
+            roomTypeByKey = mapOf((3L to "R-401") to RoomType(id = 3, name = "Deluxe Twin Room", maxOccupancy = 3)),
+            metrics = SupplierMetrics(SimpleMeterRegistry()),
+        )
+        val clientB = FakeSupplierClient(Supplier.B) { Mono.just(listOf(B_PRODUCT)) }
+
+        val result = service(listOf(clientB), mapOf(Supplier.B to plan(Supplier.B, listOf("B77120"), lookup)))
+            .search(criteria.copy(adults = 2, children = 1)) // guests = 3 == maxOccupancy 3
+
+        assertEquals(3L, result.stays.single().roomType.id)
+    }
+
+    @Test
     fun `정규화 실패 - 깨진 금액은 청크 실패로 흡수되되 내부 메시지는 노출되지 않는다`() {
         // 음수 금액에 가드를 더하지 않는 대신, 도메인 불변식(Price)이 던진 예외가 조용히 사라지지 않고
         // 청크 단위 부분 실패로 드러나는 것을 고정한다. 단, 공개 reason 은 불투명한 분류 문자열이어야

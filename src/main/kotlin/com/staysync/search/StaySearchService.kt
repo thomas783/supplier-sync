@@ -84,7 +84,7 @@ class StaySearchService(
             resilience.decorate(client.supplier, client.fetchStayProducts(query))
                 // 응답이 도착한 청크만 즉시 정규화 — 전체 응답을 기다리는 장벽이 없다
                 .map<ChunkOutcome> { products ->
-                    ChunkOutcome.Success(client.supplier, toStayProducts(client.supplier, products, plan.lookup, stayDates))
+                    ChunkOutcome.Success(client.supplier, toStayProducts(client.supplier, products, plan.lookup, stayDates, criteria.guests))
                 }
                 // 실패를 값(Failure)으로 바꿔야 flatMap 이 스트림을 죽이지 않는다 — 폭발 반경은 청크 하나.
                 // Exception 만 흡수한다 — Error 계열(JVM 치명 상태)은 부분 실패로 위장시키지 않고 그대로 전파
@@ -116,14 +116,21 @@ class StaySearchService(
      * 코드 치환과 미매핑 스킵은 [MappingLookup.resolve] 가, 가용성 판정과 요금 계산은 도메인 정책이
      * 맡으므로 여기서는 결과를 조합하기만 한다. 미확정(judge = null)은 여기서 제외된다 — 표준 모델에
      * 도달하는 가용성은 언제나 확정 상태다(미매핑 제외와 같은 층위).
+     *
+     * 요청 인원([guests])을 수용하지 못하는 객실(maxOccupancy < 인원)도 같은 층위로 조용히 제외한다 —
+     * 공급사가 정원으로 걸러 준다는 보장이 없어(계약에 없음) 우리 쪽 방어선을 둔다. 기준 정원은 카탈로그
+     * 스냅샷의 [com.staysync.domain.model.RoomType.maxOccupancy](방 속성의 authoritative 원천)다.
      */
     private fun toStayProducts(
         supplier: Supplier,
         products: List<SupplierStayProduct>,
         lookup: MappingLookup,
         stayDates: List<LocalDate>,
+        guests: Int,
     ): List<StayProduct> = products.mapNotNull { product ->
         val (property, roomType) = lookup.resolve(product) ?: return@mapNotNull null
+        // 정원 미달 객실 제외 — 요청 인원을 못 담는 방은 애초에 후보가 아니다(가용성 판정 이전 단계).
+        if (roomType.maxOccupancy < guests) return@mapNotNull null
         val availability = AvailabilityPolicy.judge(stayDates, product.remainingByDate)
         // 판정 분포 기록 — 보수적 노출 정책이 조용히 빼는 상품의 규모를 정량화한다 (docs/MONITORING.md)
         metrics.recordAvailability(supplier, availability)

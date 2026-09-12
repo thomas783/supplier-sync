@@ -19,6 +19,12 @@ data class StaySearchCriteria(
         generateSequence(checkIn) { it.plusDays(1) }
             .takeWhile { it.isBefore(checkOut) }
             .toList()
+
+    /**
+     * 요청 인원 — 객실 정원([com.staysync.domain.model.RoomType.maxOccupancy]) 대조 기준. 아동 연령별
+     * 규칙(유아 무료 등)이 계약에 없으므로 성인+아동 총원으로 본다(방을 초과예약하지 않는 보수적 기준).
+     */
+    val guests: Int get() = adults + children
 }
 
 /**
