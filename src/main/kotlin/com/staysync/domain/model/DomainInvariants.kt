@@ -1,5 +1,8 @@
 package com.staysync.domain.model
 
+import java.math.BigDecimal
+import java.util.Currency
+
 /**
  * 도메인 정합성 규칙의 단일 원천.
  *
@@ -13,11 +16,14 @@ package com.staysync.domain.model
  */
 object DomainInvariants {
 
-    /** 금액 — 통화 최소 단위 정수, 음수 불가. */
+    /** 금액 — 통화 최소 단위 정수(KRW), 음수 불가. */
     fun validAmount(amount: Long): Boolean = amount >= 0
 
-    /** 통화 코드 — 공백 불가 (ISO 4217, 환산 없이 보존). */
-    fun validCurrency(currency: String): Boolean = currency.isNotBlank()
+    /** 원 통화 금액 — BigDecimal, 음수 불가(0 허용). */
+    fun validAmount(amount: BigDecimal): Boolean = amount.signum() >= 0
+
+    /** 통화 코드 — 유효한 ISO 4217 코드여야 한다(java.util.Currency 로 파싱 가능). 공백·미지정 코드는 무효. */
+    fun validCurrency(currency: String): Boolean = runCatching { Currency.getInstance(currency) }.isSuccess
 
     /** 날짜별 잔여 객실 수 — 음수 불가. 0 은 매진이지 결함이 아니다. */
     fun validRemaining(remaining: Int): Boolean = remaining >= 0

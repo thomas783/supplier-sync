@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.util.Currency
 
 /**
  * 웹 투영의 단위 테스트 — 필드 대응(전치 버그 방지)을 고정한다. 미확정 제외는 정규화의
@@ -26,7 +27,12 @@ class StaySearchResponseTest {
         breakfastIncluded = true,
         availability = availability,
         supplier = Supplier.A,
-        price = Price.of(totalAmount = 429_000, nights = 3, currency = "KRW"),
+        price = Price.of(
+            originalTotal = 429_000.toBigDecimal(),
+            currency = Currency.getInstance("KRW"),
+            exchangeRate = 1.toBigDecimal(),
+            nights = 3,
+        ),
     )
 
     @Test
@@ -48,6 +54,10 @@ class StaySearchResponseTest {
         assertEquals(429_000L, item.price.totalAmount)
         assertEquals(143_000L, item.price.averageNightlyAmount)
         assertEquals("KRW", item.price.currency)
+        // KRW 공급사(환율 1) — 원가는 환산가와 같고 환율은 1로 degrade 한다 (docs/CURRENCY.md)
+        assertEquals(429_000.toBigDecimal(), item.price.originalTotalAmount)
+        assertEquals(143_000.toBigDecimal(), item.price.originalAverageNightlyAmount)
+        assertEquals(1.toBigDecimal(), item.price.exchangeRate)
     }
 
     @Test

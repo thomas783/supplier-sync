@@ -121,7 +121,7 @@ class SupplierBClient(
         maxOccupancy = maxOccupancy,
         breakfastIncluded = breakfastIncluded,
         currency = currency,
-        grossTotalAmount = totalPrice,
+        grossTotalAmount = totalPrice.toBigDecimal(),
         remainingByDate = inventory.associate { it.date to it.remainingRooms },
     )
 

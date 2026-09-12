@@ -1440,3 +1440,37 @@ Availability.require 가 DomainInvariants 를 호출하지 않고 누락됐다.
 
 테스트 14건 추가(총 154건). 발굴·검증은 다중 에이전트 병렬 리뷰로 수행했고, 각 발견을 적대적으로
 재검증해 오탐을 걸러낸 뒤 반영했다.
+
+## 2026-09-12
+
+### 22:44 · 통화 표준 모델 구현 (CURRENCY.md 설계의 코드화)
+
+CURRENCY.md 는 다중 통화·환율 처리를 "설계만" 담고 구현은 외화 공급사 도입 시점으로 유보(YAGNI)해 둔
+상태였다. 이번에 그 설계를 코드로 끌어내리기로 했다 — 유보의 논리는 "쓰지 않는 필드를 미리 늘리지
+않는다"였는데, 통화 코드가 이미 모델에 `String` 으로 흐르고 있어 타입 안전성과 변환 골격을 지금 세워도
+과잉이 아니라고 판단했다. 환율 소스만 스텁으로 남기면 YAGNI 정신은 유지된다.
+
+- **도메인 모델 형태**: 처음엔 CURRENCY.md 의 `MoneyPair{krwAmount: Long, originalAmount: BigDecimal}`
+  를 그대로 옮겼으나, "이 모델이 일반적인 형태가 맞냐"는 문제 제기를 받아 재검토했다. Fowler/JSR-354 의
+  관용은 금액이 통화를 스스로 들고 다니는 `Money{amount, currency}` 다. 그래서 `Money` 를 기본 값 객체로
+  두고, 원가·환산가 쌍을 `ExchangedMoney{original: Money, converted: Money}` 로 묶는 형태로 바꿨다 —
+  `converted` 가 KRW·`original` 이 원 통화임이 타입으로 드러나고, `Price` 에 별도 `currency` 필드가
+  필요 없어진다. 환율은 총액·평균이 공유하는 값이라 `Price{exchangeRate, total, averageNightly}` 로
+  Price 수준에 한 벌만 뒀다(사용자가 "exchangeRate 랑 변환된 값도 다 표현하고 싶다"고 명시).
+- **환율 소스**: `ExchangeRateProvider` 포트 + `FixedExchangeRateProvider`(통화 무관 1 반환) 스텁.
+  "환율은 어디서 가져오나"라는 물음에 대해, 지금은 전 공급사 KRW 라 실 환율 소스가 없고 no-op 이며,
+  외화 공급사 추가 시 이 포트를 주기 캐시 구현으로 교체하면 도메인·정규화·응답은 안 바뀐다고 정리했다.
+- **표현 타입**: 환산가도 Long 대신 `Money`(KRW, BigDecimal scale 0)로 통일해 원가·환산가를 같은 값
+  객체로 다뤘다. 원가 BigDecimal 은 통화별 소수 자릿수 불가지·환율 곱 중간 정밀도 보존을 위해서다.
+- **파이프라인·경계**: 어댑터는 원 통화 금액을 `BigDecimal grossTotalAmount` 로 담기만 하고(변환 지식
+  없음), 정규화가 `Currency.getInstance(code)` + `provider.rate()` 로 표준 `Price.of()` 를 조립한다.
+  `DomainInvariants.validCurrency` 를 파싱 가능한 ISO 코드 검증으로 강화했다.
+- **API 하위호환**: `PriceResponse` 의 기존 KRW `Long` 필드(`totalAmount`·`averageNightlyAmount`)를
+  환산가로 유지하고, 원가·환율 필드를 가산적으로만 추가했다 — KRW 공급사에서는 환율 1·환산가=원가로
+  자연 degrade 하므로 기존 소비자 계약이 깨지지 않는다.
+- **문서 정합**: CURRENCY.md 를 구현된 설계에 맞춰 갱신했다(MoneyPair→Money/ExchangedMoney, "유보"→
+  "표준 모델·파이프라인 구현됨, 환율 소스만 스텁"). 코드-문서 일치 규율(§7)에 따라 같은 작업에 포함했다.
+
+AI(다중 에이전트) 활용: MoneyPair 형태의 일반성에 의문을 제기받아 Money/ExchangedMoney 관용형으로
+수정 수용했고, exchangeRate 를 항목별이 아니라 Price 수준에 두자는 방향을 그대로 반영했다. 전체 빌드
+통과(테스트 0 실패).

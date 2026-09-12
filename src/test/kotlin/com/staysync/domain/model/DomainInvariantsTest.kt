@@ -38,6 +38,7 @@ class DomainInvariantsTest {
     @Test
     fun `통화·필수 문자열 - 공백은 무효, 비공백은 유효`() {
         assertFalse(DomainInvariants.validCurrency(" "))
+        assertFalse(DomainInvariants.validCurrency("WON")) // ISO 4217 코드가 아님 (원화는 KRW)
         assertTrue(DomainInvariants.validCurrency("KRW"))
         assertFalse(DomainInvariants.validRequiredText(""))
         assertTrue(DomainInvariants.validRequiredText("A-10023"))
