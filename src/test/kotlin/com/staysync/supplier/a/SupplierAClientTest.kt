@@ -93,7 +93,7 @@ class SupplierAClientTest {
 
         val riverside = products.first { it.supplierPropertyCode == "A-10023" }
         // (120000+12000)+(150000+15000)+(120000+12000) = 429000
-        assertEquals(429000, riverside.grossTotalAmount)
+        assertEquals(429000.toBigDecimal(), riverside.grossTotalAmount)
         assertEquals("KRW", riverside.currency)
         assertEquals(false, riverside.breakfastIncluded)
         assertEquals(
@@ -213,7 +213,7 @@ class SupplierAClientTest {
 
         val product = client.fetchStayProducts(query).block()!!.single()
 
-        assertEquals(330000, product.grossTotalAmount) // 09-04 제외한 3일치 (110000 × 3)
+        assertEquals(330000.toBigDecimal(), product.grossTotalAmount) // 09-04 제외한 3일치 (110000 × 3)
         assertEquals(setOf(LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 2), LocalDate.of(2026, 9, 3)), product.remainingByDate.keys)
     }
 

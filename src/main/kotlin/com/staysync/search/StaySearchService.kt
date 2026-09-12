@@ -2,6 +2,7 @@ package com.staysync.search
 
 import com.staysync.config.SupplierProperties
 import com.staysync.domain.model.AvailabilityPolicy
+import com.staysync.exchange.ExchangeRateProvider
 import com.staysync.resilience.SupplierResilience
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException
 import com.staysync.domain.model.Price
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Service
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
 import java.time.LocalDate
+import java.util.Currency
 
 /**
  * 통합 검색 유스케이스 (흐름의 규칙은 docs/ARCHITECTURE.md).
@@ -32,6 +34,7 @@ class StaySearchService(
     private val mappingQueryService: MappingQueryService,
     private val resilience: SupplierResilience,
     private val metrics: SupplierMetrics,
+    private val exchangeRates: ExchangeRateProvider,
     supplierProperties: SupplierProperties,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -128,16 +131,20 @@ class StaySearchService(
         // 판정 분포 기록 — 보수적 노출 정책이 조용히 빼는 상품의 규모를 정량화한다 (docs/MONITORING.md)
         metrics.recordAvailability(supplier, availability)
         if (availability == null) return@mapNotNull null
+        // 관문(ConversionGate.admit)이 유효 ISO 코드임을 이미 검증했으므로 파싱은 성공이 보장된다
+        val currency = Currency.getInstance(product.currency)
         StayProduct(
             property = property,
             roomType = roomType,
             breakfastIncluded = product.breakfastIncluded,
             availability = availability,
             supplier = supplier,
+            // 원 통화 총액을 검색 시점 환율로 표준 KRW 로 환산해 담는다 (docs/CURRENCY.md)
             price = Price.of(
-                totalAmount = product.grossTotalAmount,
+                originalTotal = product.grossTotalAmount,
+                currency = currency,
+                exchangeRate = exchangeRates.rate(currency),
                 nights = stayDates.size,
-                currency = product.currency,
             ),
         )
     }

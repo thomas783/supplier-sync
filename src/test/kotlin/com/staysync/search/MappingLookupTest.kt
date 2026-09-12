@@ -34,7 +34,7 @@ class MappingLookupTest {
         maxOccupancy = 9,
         breakfastIncluded = false,
         currency = "KRW",
-        grossTotalAmount = 200_000,
+        grossTotalAmount = 200_000.toBigDecimal(),
         remainingByDate = mapOf(LocalDate.of(2026, 9, 1) to 3),
     )
 

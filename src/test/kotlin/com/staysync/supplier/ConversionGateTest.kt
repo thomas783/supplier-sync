@@ -9,7 +9,7 @@ import java.time.LocalDate
 class ConversionGateTest {
 
     private fun product(
-        grossTotalAmount: Long = 429000,
+        grossTotalAmount: java.math.BigDecimal = 429000.toBigDecimal(),
         currency: String = "KRW",
         remainingByDate: Map<LocalDate, Int> = mapOf(LocalDate.of(2026, 9, 1) to 3),
     ) = SupplierStayProduct(
@@ -46,7 +46,7 @@ class ConversionGateTest {
 
     @Test
     fun `총액 음수 - INVALID_PRICE`() {
-        assertEquals(DefectReason.INVALID_PRICE, ConversionGate.defectOf(product(grossTotalAmount = -1000)))
+        assertEquals(DefectReason.INVALID_PRICE, ConversionGate.defectOf(product(grossTotalAmount = (-1000).toBigDecimal())))
     }
 
     @Test

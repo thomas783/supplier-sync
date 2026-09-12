@@ -5,6 +5,7 @@ import io.netty.channel.ConnectTimeoutException
 import io.netty.handler.timeout.ReadTimeoutException
 import org.springframework.core.codec.DecodingException
 import org.springframework.web.reactive.function.client.WebClientResponseException
+import java.math.BigDecimal
 import java.time.LocalDate
 import java.util.concurrent.TimeoutException
 
@@ -37,7 +38,8 @@ data class SupplierRoomType(
  * 재고·요금 조회 결과 1건 — 공급사 코드 기반의 숙박 상품 (숙소 × 객실 타입 단위).
  *
  * 요금은 두 공급사 교집합인 "세금 포함 총액(gross)"으로 이미 통일해 담는다
- * (A: Σ(nightlyRate + taxAmount), B: totalPrice).
+ * (A: Σ(nightlyRate + taxAmount), B: totalPrice). 원 통화 금액이라 BigDecimal 로 담고, 표준 KRW 로의
+ * 환산은 정규화(검색 계층)가 환율을 적용해 수행한다 (docs/CURRENCY.md).
  */
 data class SupplierStayProduct(
     val supplierPropertyCode: String,
@@ -47,7 +49,7 @@ data class SupplierStayProduct(
     val maxOccupancy: Int,
     val breakfastIncluded: Boolean,
     val currency: String,
-    val grossTotalAmount: Long,
+    val grossTotalAmount: BigDecimal,
     val remainingByDate: Map<LocalDate, Int>,
 )
 

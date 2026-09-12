@@ -92,7 +92,7 @@ class SupplierBClientTest {
 
         val product = client.fetchStayProducts(query).block()!!.single()
 
-        assertEquals(452000, product.grossTotalAmount)
+        assertEquals(452000.toBigDecimal(), product.grossTotalAmount)
         assertEquals("KRW", product.currency)
         assertEquals(true, product.breakfastIncluded)
         assertEquals(

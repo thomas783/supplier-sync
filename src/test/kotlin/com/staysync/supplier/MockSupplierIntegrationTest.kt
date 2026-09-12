@@ -47,7 +47,7 @@ class MockSupplierIntegrationTest {
 
         val products = client.fetchStayProducts(query).block()!!
         val riverside = products.first { it.supplierPropertyCode == "A-10023" }
-        assertEquals(429000, riverside.grossTotalAmount) // (120000+12000)+(150000+15000)+(120000+12000)
+        assertEquals(429000.toBigDecimal(), riverside.grossTotalAmount) // (120000+12000)+(150000+15000)+(120000+12000)
     }
 
     @Test
@@ -58,7 +58,7 @@ class MockSupplierIntegrationTest {
         assertEquals("B77120", properties.single().supplierPropertyCode)
 
         val product = client.fetchStayProducts(query).block()!!.single()
-        assertEquals(452000, product.grossTotalAmount)
+        assertEquals(452000.toBigDecimal(), product.grossTotalAmount)
     }
 
     @Test

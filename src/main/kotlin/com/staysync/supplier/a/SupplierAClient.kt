@@ -111,8 +111,8 @@ class SupplierAClient(
         maxOccupancy = maxOccupancy,
         breakfastIncluded = breakfastIncluded,
         currency = currency,
-        // 세금 별도(net) → gross 총액 = Σ(nightlyRate + taxAmount)
-        grossTotalAmount = rates.sumOf { it.nightlyRate + it.taxAmount },
+        // 세금 별도(net) → gross 총액 = Σ(nightlyRate + taxAmount). 원 통화 금액이라 BigDecimal 로 담는다
+        grossTotalAmount = rates.sumOf { it.nightlyRate + it.taxAmount }.toBigDecimal(),
         remainingByDate = rates.associate { it.date to it.remainingRooms },
     )
 

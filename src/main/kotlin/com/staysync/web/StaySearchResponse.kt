@@ -4,6 +4,7 @@ import com.staysync.domain.model.StayProduct
 import io.swagger.v3.oas.annotations.media.Schema
 import com.staysync.domain.model.Supplier
 import com.staysync.search.StaySearchResult
+import java.math.BigDecimal
 
 /**
  * 통합 검색 응답 DTO — 도메인 모델을 그대로 노출하지 않고 웹 표현(docs/API.md)으로 투영한다.
@@ -47,9 +48,12 @@ data class StaySearchResponse(
                 ),
                 supplier = product.supplier,
                 price = PriceResponse(
-                    totalAmount = product.price.totalAmount,
-                    averageNightlyAmount = product.price.averageNightlyAmount,
-                    currency = product.price.currency,
+                    totalAmount = product.price.total.converted.amount.toLong(),
+                    averageNightlyAmount = product.price.averageNightly.converted.amount.toLong(),
+                    originalTotalAmount = product.price.total.original.amount,
+                    originalAverageNightlyAmount = product.price.averageNightly.original.amount,
+                    exchangeRate = product.price.exchangeRate,
+                    currency = product.price.total.original.currency.currencyCode,
                 ),
             )
         }
@@ -90,13 +94,22 @@ data class AvailabilityResponse(
     val availableRooms: Int,
 )
 
-/** 표준 요금 (docs/API.md): 정산 기준인 gross 총액 + 표시용 평균 1박가 + 통화. */
+/**
+ * 표준 요금 (docs/API.md, docs/CURRENCY.md): 환산 KRW 총액·평균(비교·정렬·표시 기준) + 원 통화 원가 +
+ * 적용 환율 + 원 통화 코드. KRW 공급사에서는 환산가 = 원가, 환율 = 1 로 자연 degrade 한다.
+ */
 data class PriceResponse(
-    @field:Schema(description = "숙박 기간 전체의 세금 포함 총액 — 정산·결제 금액의 기준")
+    @field:Schema(description = "숙박 기간 전체의 세금 포함 환산 총액(KRW) — 비교·정렬·정산 기준")
     val totalAmount: Long,
-    @field:Schema(description = "평균 1박가 = 총액 ÷ 박수(내림) — 표시용 파생값")
+    @field:Schema(description = "평균 1박가(KRW) = 환산 총액 ÷ 박수(내림) — 표시용 파생값")
     val averageNightlyAmount: Long,
-    @field:Schema(description = "ISO 4217 통화 코드 — 환산 없이 원 통화 그대로")
+    @field:Schema(description = "원 통화 총액 — 실제 청구에 가까운 값")
+    val originalTotalAmount: BigDecimal,
+    @field:Schema(description = "원 통화 평균 1박가 = 원가 총액 ÷ 박수(내림)")
+    val originalAverageNightlyAmount: BigDecimal,
+    @field:Schema(description = "적용 환율(원 통화 → KRW) — 검색 시점 스냅샷")
+    val exchangeRate: BigDecimal,
+    @field:Schema(description = "원 통화 ISO 4217 코드 — 환산가는 언제나 KRW")
     val currency: String,
 )
 

@@ -1,8 +1,10 @@
-# 통화·환율 처리 (설계 — 외화 공급사 도입 시 발동)
+# 통화·환율 처리
 
-이 문서는 다중 통화·환율 처리의 **설계만** 담습니다. 현재 범위는 KRW 단일이라 구현하지 않으며(모든
-공급사가 KRW), 외화로 요금을 주는 공급사가 추가되는 시점에 이 설계대로 도입합니다. 통화 코드가 이미
-모델에 보존되므로([DOMAIN_MODEL.md](DOMAIN_MODEL.md)) 그때까지 데이터 유실은 없습니다.
+다중 통화·환율의 **표준 모델과 변환 파이프라인은 구현돼 있습니다** — 요금은 원 통화 원가와 KRW 환산가를
+함께 담고(아래 `Money`·`ExchangedMoney`), 정규화가 환율을 적용해 환산합니다. 다만 **환율 소스는 아직
+스텁**입니다: 현재 모든 공급사가 KRW라 `ExchangeRateProvider` 의 구현(`FixedExchangeRateProvider`)이
+통화 무관하게 1을 돌려주는 no-op입니다. 외화로 요금을 주는 공급사가 추가되는 시점에 이 포트를 실제 환율
+구현(아래 "환율 소스")으로 교체하면 되고, 도메인·정규화·응답은 바뀌지 않습니다.
 
 ## 문제 — 표준은 KRW 정수인데 공급사는 외화·소수 통화를 줄 수 있다
 
@@ -14,42 +16,44 @@
 - **환산**: 비교·정렬용 KRW 값을 만들려면 환율이 필요하고, 곱셈·나눗셈이 들어오면 `Long` 만으로는
   정밀도가 부족합니다.
 
-## 표준 모델 확장 — Price 에 원가·환율을 나란히 보존
+## 표준 모델 — Price 에 원가·환산가·환율을 나란히 보존
 
-`Price` 에 환산가(KRW)와 원가(로컬)를 함께 담고, 쓴 환율까지 남겨 변환을 추적·재현 가능하게 합니다.
-금액 항목(총액·평균 1박가)마다 "환산가 + 원가"가 한 쌍으로 붙으므로, 그 쌍을 `MoneyPair` 값 타입으로
-묶어 필드가 항목 수의 두 배로 불어나는 것을 막습니다. `currency` 와 `exchangeRate` 는 한 `Price` 안에서
-두 금액이 언제나 공유하는(같은 상품·같은 검색 시점·같은 원 통화) 값이라 `Price` 수준에 한 벌만 둡니다.
+`Price` 는 각 금액을 "원가(원 통화) + 환산가(KRW)" 쌍으로 담습니다. 각 금액은 `ExchangedMoney` 이고,
+원가·환산가는 각각 통화를 든 `Money` 값 객체입니다 — 어느 통화의 얼마인지 스스로 설명합니다. 환율은 한
+`Price` 안에서 총액·평균이 언제나 공유하는 값이라 `Price` 수준에 한 벌만 둡니다.
 
 | `Price` 필드 | 타입 | 의미 |
 |---|---|---|
-| `currency` | `String` | **원 통화** ISO 4217 코드(환산가는 언제나 KRW라 별도 표기 불필요) |
-| `exchangeRate` | `BigDecimal` | 적용 환율(로컬 → KRW) — 검색 시점 스냅샷, 두 금액이 공유, 변환 추적용 |
-| `totalAmount` | `MoneyPair` | 총액 (환산 KRW + 원 통화) |
-| `averageNightlyAmount` | `MoneyPair` | 평균 1박가 = 총액 ÷ 박수(내림) |
+| `exchangeRate` | `BigDecimal` | 적용 환율(원 통화 → KRW) — 검색 시점 스냅샷, 두 금액이 공유, 변환 추적용 |
+| `total` | `ExchangedMoney` | 총액 (원가 + 환산가) |
+| `averageNightly` | `ExchangedMoney` | 평균 1박가 = 총액 ÷ 박수(내림) |
 
-| `MoneyPair` 필드 | 타입 | 의미 |
+| `ExchangedMoney` 필드 | 타입 | 의미 |
 |---|---|---|
-| `krwAmount` | `Long` (KRW) | 환산가 — **비교·정렬·표시용 단일 기준** |
-| `originalAmount` | `BigDecimal` (로컬) | 공급사가 준 원 통화 금액 — **실제 청구에 가까운 값** |
+| `original` | `Money` (원 통화) | 공급사가 준 원 통화 금액 — **실제 청구에 가까운 값** |
+| `converted` | `Money` (KRW) | 환산가 — **비교·정렬·표시용 단일 기준** |
 
-- **환산가와 원가를 둘 다 두는 이유**: 환산가(KRW)는 공급사 횡단 비교의 공통 축이고, 원가(로컬)는
-  고객이 실제로 청구받는 값에 가깝습니다 — 환산가만 두면 "왜 카드값이 표시가와 다른가"를 설명할 수
-  없고, 원가만 두면 서로 다른 통화의 상품을 나란히 비교할 수 없습니다. 둘 다 필요합니다.
+`Money` 는 `{ amount: BigDecimal, currency: Currency }` 값 객체입니다(음수 불가). 통화를 금액에 붙여
+두어, `converted` 는 언제나 KRW·`original` 은 원 통화임이 타입으로 드러납니다 — 별도 `currency` 필드를
+`Price` 에 둘 필요가 없습니다.
+
+- **원가와 환산가를 둘 다 두는 이유**: 환산가(KRW)는 공급사 횡단 비교의 공통 축이고, 원가는 고객이 실제로
+  청구받는 값에 가깝습니다 — 환산가만 두면 "왜 카드값이 표시가와 다른가"를 설명할 수 없고, 원가만 두면
+  서로 다른 통화의 상품을 나란히 비교할 수 없습니다. 둘 다 필요합니다.
 - **환율을 저장하는 이유**: 환산은 검색 시점 환율의 함수라, 나중에 "이 KRW 값이 어떻게 나왔나"를
-  재현하려면 그 시점 환율이 있어야 합니다(감사·디버깅). 환산가 = 원가 × 환율(내림)이 레코드 안에서
-  닫힙니다.
-- **KRW 공급사에서의 자연 degrade**: 원 통화가 KRW 면 `exchangeRate = 1`, 각 `MoneyPair` 의
-  `originalAmount = krwAmount`(BigDecimal 표현), `currency = KRW`. 특수 분기 없이 같은 구조로 동작하므로,
-  외화 도입 전에도 이 모델을 그대로 쓸 수 있습니다.
+  재현하려면 그 시점 환율이 있어야 합니다(감사·디버깅). 환산가 = 원가 × 환율(내림)이 레코드 안에서 닫힙니다.
+- **KRW 공급사에서의 자연 degrade**: 원 통화가 KRW 면 `exchangeRate = 1`, `converted.amount ==
+  original.amount`(통화만 KRW). 특수 분기 없이 같은 구조로 동작하며, 현재 `ExchangeRateProvider` 가 항상 1을
+  주므로 이 경로로 돕니다.
 
-## 표현 타입의 근거 — 로컬 BigDecimal, 표준 KRW Long
+## 표현 타입의 근거 — 원가·환산가 모두 BigDecimal(Money)
 
-- **로컬 = `BigDecimal`**: 통화별 소수 자릿수를 하드코딩하지 않고 **스케일 불가지**로 담습니다 — "정확히
+- **원 통화 = `BigDecimal`**: 통화별 소수 자릿수를 하드코딩하지 않고 **스케일 불가지**로 담습니다 — "정확히
   3자리"에 베팅하지 않아도 되고(ISO 4217 에 3 초과도 있음), 환율 곱셈의 중간 정밀도를 잃지 않습니다.
   `Double` 은 이진 부동소수점 오차로 금액에 부적격이라 배제합니다.
-- **표준 = KRW `Long`**: KRW 는 최소 단위 소수가 0이라 원 단위 정수로 완전하고, 비교·정렬·표시의 단일
-  기준을 정수 하나로 고정합니다. 기존 모델의 "금액은 통화 최소 단위 정수" 원칙을 KRW 에 대해 유지합니다.
+- **환산 KRW 도 `Money`(BigDecimal, scale 0)**: KRW 는 최소 단위 소수가 0이라 scale 0 BigDecimal 로 원 단위
+  정수처럼 완전하고, 비교·정렬·표시의 단일 기준이 됩니다. Long 대신 `Money` 로 통일해 원가·환산가가 통화를
+  포함한 같은 값 객체로 다뤄집니다.
 
 ## 변환 파이프라인 — 정규화 단계에서
 
@@ -59,12 +63,11 @@
 
 ```
 어댑터: 원 통화 BigDecimal + currency  ──정규화──►  Price
-                                                   ├─ currency = 원 통화 코드
                                                    ├─ exchangeRate = provider.rate(currency)
-                                                   ├─ totalAmount.originalAmount = 원 통화 BigDecimal
-                                                   ├─ totalAmount.krwAmount(KRW Long) = (원가 × 환율).setScale(0, FLOOR)
-                                                   ├─ averageNightlyAmount.originalAmount = 원가 ÷ 박수 (BigDecimal)
-                                                   └─ averageNightlyAmount.krwAmount(KRW Long) = totalAmount.krwAmount ÷ 박수 (내림)
+                                                   ├─ total.original = Money(원 통화 BigDecimal, currency)
+                                                   ├─ total.converted = Money((원가 × 환율).setScale(0, FLOOR), KRW)
+                                                   ├─ averageNightly.original = Money(원가 ÷ 박수(내림), currency)
+                                                   └─ averageNightly.converted = Money(환산 총액 ÷ 박수(내림), KRW)
 ```
 
 - **내림(FLOOR)의 함의**: 환산 KRW 는 **비교·표시용 figure 이지 실제 청구액이 아닙니다** — 실제 청구는
@@ -102,10 +105,10 @@
 
 ## 현재 범위와 발동
 
-지금은 모든 공급사가 KRW 라 환산이 no-op(rate = 1)입니다. 실제 코드 변경(`Price` 필드 추가, 어댑터의
-`BigDecimal` 금액화, `ExchangeRateProvider` 도입)은 **외화로 요금을 주는 공급사가 추가되는 시점**에
-착수합니다 — 그 전에 미리 필드를 늘리면 쓰지 않는 구조가 코드에 앞서 들어오므로(YAGNI), 이 문서로 설계만
-고정해 둡니다.
+표준 모델(`Money`·`ExchangedMoney`·`Price`)과 변환 파이프라인(어댑터의 원 통화 BigDecimal → 정규화 환산)은
+구현돼 있습니다. 다만 **환율 소스는 스텁**입니다 — 지금은 모든 공급사가 KRW 라 `FixedExchangeRateProvider`
+가 통화 무관하게 1을 돌려주는 no-op이고, 환산이 항등입니다. 외화로 요금을 주는 공급사가 추가되는 시점에
+이 포트를 실제 환율 구현(위 "환율 소스")으로 교체하면 되고, 도메인·정규화·응답 계약은 바뀌지 않습니다.
 
 ## 미결 — 구현 시 결정
 

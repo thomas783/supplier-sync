@@ -7,6 +7,7 @@ import com.staysync.domain.model.RoomType
 import com.staysync.domain.model.Supplier
 import com.staysync.domain.repository.PropertyRepository
 import com.staysync.domain.repository.RoomTypeRepository
+import com.staysync.exchange.FixedExchangeRateProvider
 import com.staysync.observability.SupplierMetrics
 import com.staysync.resilience.RetryablePredicate
 import com.staysync.resilience.SupplierResilience
@@ -67,8 +68,8 @@ class StaySearchServiceTest {
         assertEquals("Riverside Hotel Seoul", stay.property.name)
         assertEquals(3L, stay.roomType.id)
         assertEquals(Availability(availableRooms = 1), stay.availability) // 병목 최소값: [3, 1] → 1
-        assertEquals(452_000L, stay.price.totalAmount)
-        assertEquals(226_000L, stay.price.averageNightlyAmount) // 2박 내림
+        assertEquals(452_000.toBigDecimal(), stay.price.total.converted.amount)
+        assertEquals(226_000.toBigDecimal(), stay.price.averageNightly.converted.amount) // 2박 내림
         assertEquals(Supplier.B, stay.supplier)
     }
 
@@ -102,7 +103,7 @@ class StaySearchServiceTest {
         // 음수 금액에 가드를 더하지 않는 대신, 도메인 불변식(Price)이 던진 예외가 조용히 사라지지 않고
         // 청크 단위 부분 실패로 드러나는 것을 고정한다. 단, 공개 reason 은 불투명한 분류 문자열이어야
         // 한다 — 불변식 위반 메시지 같은 내부 구현 상세는 로그에만 남는다 (docs/API.md)
-        val broken = B_PRODUCT.copy(grossTotalAmount = -1)
+        val broken = B_PRODUCT.copy(grossTotalAmount = (-1).toBigDecimal())
         val clientB = FakeSupplierClient(Supplier.B) { Mono.just(listOf(broken)) }
 
         val result = service(listOf(clientB), mapOf(Supplier.B to plan(Supplier.B, listOf("B77120"), B_LOOKUP)))
@@ -230,7 +231,8 @@ class StaySearchServiceTest {
         plans: Map<Supplier, SupplierQueryPlan>,
         resilience: SupplierResilience = resilience(),
     ) = StaySearchService(
-        clients, FakeMappingQueryService(plans), resilience, SupplierMetrics(SimpleMeterRegistry()), SUPPLIER_PROPERTIES,
+        clients, FakeMappingQueryService(plans), resilience, SupplierMetrics(SimpleMeterRegistry()),
+        FixedExchangeRateProvider(), SUPPLIER_PROPERTIES,
     )
 
     // 운영 yml 과 같은 정책(첫 시도 + 재시도 1회, retryable 필터)을 코드로 재현하되 대기는 1ms 로 줄인다.
@@ -308,7 +310,7 @@ class StaySearchServiceTest {
             maxOccupancy = 2,
             breakfastIncluded = true,
             currency = "KRW",
-            grossTotalAmount = 452_000,
+            grossTotalAmount = 452_000.toBigDecimal(),
             remainingByDate = mapOf(LocalDate.of(2026, 9, 1) to 3, LocalDate.of(2026, 9, 2) to 1),
         )
     }
