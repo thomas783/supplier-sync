@@ -50,7 +50,8 @@ services:
     environment:
       TZ: Asia/Seoul  # JVM 시계 KST — DB·JDBC 와 3계층 일치 (docs/ERD.md)
       # 컨테이너 네트워크에서는 호스트명이 서비스명이다 — localhost 기본값을 덮어쓴다
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/supplier_sync?connectionTimeZone=Asia/Seoul
+      # rewriteBatchedStatements: UPDATE 배치를 실제 한 번의 왕복으로 보낸다 (근거는 application.yml 참조)
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/supplier_sync?connectionTimeZone=Asia/Seoul&rewriteBatchedStatements=true
       SUPPLIER_A_BASE_URL: http://mock:9090
       SUPPLIER_B_BASE_URL: http://mock:9090
     depends_on:

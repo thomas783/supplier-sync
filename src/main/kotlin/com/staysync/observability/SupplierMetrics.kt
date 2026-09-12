@@ -63,12 +63,24 @@ class SupplierMetrics(
 
     /**
      * 결함 격리 집계 — 변환 관문([com.staysync.supplier.ConversionGate])이 결함으로 버린 항목을 사유별로
-     * 센다. 검색 경로(admit)와 동기화 경로(defectOf) 양쪽 드롭이 여기 모인다. 미매핑(`unmapped`)과 층위가
-     * 다르다 — 미매핑은 "우리 매핑의 공백", 이건 "공급사 데이터의 결함"이다. (전체 격리 저장은 미구현 —
-     * 카운터만 우선 도입, docs/QUARANTINE.md)
+     * 센다. 검색 경로(admit)와 동기화 경로(defectOf) 양쪽 드롭이 한 카운터에 모이되, `path` 태그로 어느
+     * 경로인지 가른다 — 급증이 실시간 검색 트래픽에서 온 건지 배치 동기화에서 온 건지는 운영 의미가 다르다.
+     * 미매핑(`unmapped`)과 층위가 다르다 — 미매핑은 "우리 매핑의 공백", 이건 "공급사 데이터의 결함"이다.
+     * (전체 격리 저장은 미구현 — 카운터만 우선 도입, docs/QUARANTINE.md)
+     *
+     * @param path 결함이 걸러진 경로 — "search"(검색 어댑터 admit) 또는 "sync"(동기화 defectOf)
      */
-    fun recordQuarantined(supplier: Supplier, reason: DefectReason) {
-        registry.counter(QUARANTINED_COUNTER, "supplier", supplier.name, "reason", reason.name).increment()
+    fun recordQuarantined(supplier: Supplier, reason: DefectReason, path: String) {
+        registry.counter(QUARANTINED_COUNTER, "supplier", supplier.name, "reason", reason.name, "path", path).increment()
+    }
+
+    /**
+     * 중복 자연키 집계 — 공급사 목록이 같은 자연키를 한 응답에 두 번 이상 줄 때 센다. 자연키 유일성은
+     * 공급사의 계약이라, 이 카운터가 오르면 공급사 데이터 품질 문제 신호다. 저장은 last-wins 로 흡수해
+     * 죽지 않되(docs/QUARANTINE.md 의 관측 원칙), 조용한 마스킹이 되지 않도록 여기서 드러낸다.
+     */
+    fun recordDuplicate(supplier: Supplier, level: String) {
+        registry.counter(DUPLICATE_COUNTER, "supplier", supplier.name, "level", level).increment()
     }
 
     private fun record(sample: Timer.Sample, supplier: Supplier, outcome: String) {
@@ -90,5 +102,6 @@ class SupplierMetrics(
         const val UNMAPPED_COUNTER = "supplier.stayproducts.unmapped"
         const val AVAILABILITY_COUNTER = "supplier.stayproducts.availability"
         const val QUARANTINED_COUNTER = "supplier.stayproducts.quarantined"
+        const val DUPLICATE_COUNTER = "supplier.mapping.duplicate"
     }
 }

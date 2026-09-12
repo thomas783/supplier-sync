@@ -101,6 +101,23 @@ class PropertySyncServiceTest {
     }
 
     @Test
+    fun `재동기화에 새 숙소가 추가되고 기존 숙소는 그대로 유지된다`() {
+        service.syncAll()
+        val firstId = propertyRepository.findBySupplierAndSupplierPropertyCode(Supplier.A, "A-1")!!.id
+
+        fakeA.propertiesToReturn = listOf(
+            SupplierProperty("A-1", "리버사이드", listOf(SupplierRoomType("R1", "디럭스", 2))),
+            SupplierProperty("A-2", "신규 숙소", listOf(SupplierRoomType("R1", "스탠다드", 2))), // 새로 편입
+        )
+        service.syncAll()
+
+        // 기존은 같은 id로 유지되고, 신규만 추가된다 (upsert — 삭제·재발급 없음)
+        assertEquals(2, propertyRepository.findAllBySupplier(Supplier.A).size)
+        assertEquals(firstId, propertyRepository.findBySupplierAndSupplierPropertyCode(Supplier.A, "A-1")!!.id)
+        assertEquals("신규 숙소", propertyRepository.findBySupplierAndSupplierPropertyCode(Supplier.A, "A-2")!!.propertyName)
+    }
+
+    @Test
     fun `한 공급사의 실패가 다른 공급사 동기화를 막지 않는다`() {
         fakeB.failWith = SupplierCallException(Supplier.B, "/b/api/properties HTTP 503", retryable = true)
 
