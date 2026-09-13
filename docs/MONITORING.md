@@ -61,16 +61,18 @@ sum(rate(supplier_stayproducts_fetch_seconds_count{outcome="timeout"}[5m])) by (
   / sum(rate(supplier_stayproducts_fetch_seconds_count[5m])) by (supplier)
 ```
 
-### 보조 카운터 — 미매핑 스킵, 가용성 판정 분포, 결함 격리
+### 보조 카운터 — 미매핑 스킵, 가용성 판정 분포, 결함 격리, 드리프트 진단
 
 ```
 supplier.stayproducts.unmapped (Counter)      supplier = A | B, level = property | roomType
 supplier.stayproducts.availability (Counter)  supplier = A | B, result = available | sold_out | undetermined
 supplier.stayproducts.quarantined (Counter)   supplier = A | B, reason = INVALID_PRICE | MISSING_FIELD | INVALID_INVENTORY | INVALID_OCCUPANCY | DUPLICATE_DATE
+supplier.stayproducts.drift (Counter)         supplier = A | B, level = property | roomType, field = name | occupancy
 ```
 
-세 카운터는 상품이 응답에서 빠지는 서로 다른 사유를 가릅니다 — **미매핑**은 "우리 매핑의 공백",
+앞 세 카운터는 상품이 응답에서 빠지는 서로 다른 사유를 가릅니다 — **미매핑**은 "우리 매핑의 공백",
 **미확정**은 "재고 데이터 누락", **격리**는 "공급사 데이터의 결함". 층위가 다르므로 운영 액션도 다릅니다.
+**드리프트**는 앞 셋과 성격이 다릅니다 — 상품을 빼지 않는 advisory 관측입니다(아래).
 
 - **미매핑 스킵**: 숙소 목록에 없던 상품이 재고 응답에 나타나 검색에서 빠질 때 셉니다. 오르면 "동기화가
   밀렸다 — 팔 수 있는 상품이 빠지고 있다"는 신호라, 수동 동기화 트리거라는 운영 액션으로 직결됩니다.
@@ -82,6 +84,11 @@ supplier.stayproducts.quarantined (Counter)   supplier = A | B, reason = INVALID
   모입니다 — 특히 검색 경로 결함은 이 카운터 없이는 warn 로그로만 남아 대시보드에서 보이지 않았습니다.
   특정 `reason` 급증은 공급사 응답 스키마·데이터 변경의 신호라 공급사 문의로 직결됩니다. (원시 페이로드를
   보존하는 전체 격리 저장은 미구현 — 카운터만 우선 도입.)
+- **드리프트 진단**: 검색 시 실시간 응답의 이름·정원이 저장된 카탈로그 스냅샷과 어긋날 때 셉니다. 미매핑과
+  층위가 다릅니다 — 미매핑은 "매핑의 공백", 드리프트는 "매핑은 있는데 내용이 낡음"(스냅샷 ≠ 실시간)이라
+  이름만 바뀐 미묘한 동기화 지연을 상품 단위로 조기 감지합니다. **advisory** 라 검색 결과·판정에는 영향이
+  없고(스냅샷이 authoritative, 결과는 스냅샷 값 그대로), 관측만 더합니다. 오르면 미매핑과 같은 "동기화
+  트리거" 운영 액션으로 이어지되, `field`(name|occupancy)로 무엇이 어긋났는지 가립니다.
 
 지표명의 `availability`는 용어집의 가용성 판정(결과 3종: 가용·매진·미확정)과 정확히 같은 뜻일 때만 씁니다 — 판정 분포 카운터가
 그 경우이고, 반대로 조회 타이머는 공급사 A의 원시 엔드포인트명과 혼동될 수 있어
@@ -113,6 +120,7 @@ Spring Boot가 WebClient에 자동으로 붙이는 `http.client.requests` 지표
 | 미매핑 스킵 발생 | 5분 창에서 `unmapped` 증가 지속 | 팔 수 있는 상품이 검색에서 빠지는 중 — 수동 동기화 트리거 검토 |
 | 미확정 비율 상승 | 5분 창에서 `undetermined` 비율 > 10% | 공급사 재고 데이터 품질 저하의 조기 신호 — 보수 노출의 기회비용이 커지는 중 |
 | 결함 격리 급증 | 특정 `reason` 의 `quarantined` 가 평소 대비 급증 | 공급사 응답 스키마·데이터 변경의 신호 — 어댑터 검증 조정 또는 공급사 문의 대상 |
+| 드리프트 발생 | 5분 창에서 `drift` 증가 지속 | 카탈로그 스냅샷이 실시간과 어긋남(이름·정원 변경 후 동기화 지연) — 수동 동기화 트리거 검토. advisory라 즉시성은 미매핑보다 낮음 |
 
 검색 API 자체의 5xx율·지연 같은 표준 웹 신호는 actuator 기본 지표(`http.server.requests`)로 커버되므로
 관례 임계값을 적용합니다. 대시보드는 공급사별 패널(성공률·지연·타임아웃)을 기본 단위로 구성합니다.

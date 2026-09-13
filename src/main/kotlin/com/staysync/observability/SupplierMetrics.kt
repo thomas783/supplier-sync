@@ -62,6 +62,19 @@ class SupplierMetrics(
     }
 
     /**
+     * 드리프트 진단 집계 — 검색 시 실시간 응답의 이름·정원이 저장된 카탈로그 스냅샷과 어긋날 때 센다.
+     * `unmapped`(매핑의 공백)와 층위가 다르다 — 이건 "매핑은 있는데 내용이 낡음"(스냅샷 ≠ 실시간)이라,
+     * 이름만 바뀐 미묘한 동기화 지연을 상품 단위로 조기 감지한다. advisory 신호다 — 검색 결과·판정에는
+     * 영향이 없고(스냅샷이 authoritative), 오르면 `unmapped` 와 같은 "동기화 트리거" 운영 액션으로 이어진다.
+     *
+     * @param level 어긋난 단위 — `property` | `roomType`
+     * @param field 어긋난 필드 — `name` | `occupancy`
+     */
+    fun recordDrift(supplier: Supplier, level: String, field: String) {
+        registry.counter(DRIFT_COUNTER, "supplier", supplier.name, "level", level, "field", field).increment()
+    }
+
+    /**
      * 결함 격리 집계 — 변환 관문([com.staysync.supplier.ConversionGate])이 결함으로 버린 항목을 사유별로
      * 센다. 검색 경로(admit)와 동기화 경로(defectOf) 양쪽 드롭이 여기 모인다. 미매핑(`unmapped`)과 층위가
      * 다르다 — 미매핑은 "우리 매핑의 공백", 이건 "공급사 데이터의 결함"이다. (전체 격리 저장은 미구현 —
@@ -90,5 +103,6 @@ class SupplierMetrics(
         const val UNMAPPED_COUNTER = "supplier.stayproducts.unmapped"
         const val AVAILABILITY_COUNTER = "supplier.stayproducts.availability"
         const val QUARANTINED_COUNTER = "supplier.stayproducts.quarantined"
+        const val DRIFT_COUNTER = "supplier.stayproducts.drift"
     }
 }

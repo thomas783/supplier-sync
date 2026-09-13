@@ -5,6 +5,8 @@ import com.staysync.domain.model.AvailabilityPolicy
 import com.staysync.resilience.SupplierResilience
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException
 import com.staysync.domain.model.Price
+import com.staysync.domain.model.Property
+import com.staysync.domain.model.RoomType
 import com.staysync.domain.model.StayProduct
 import com.staysync.domain.model.Supplier
 import com.staysync.observability.SupplierMetrics
@@ -124,6 +126,8 @@ class StaySearchService(
         stayDates: List<LocalDate>,
     ): List<StayProduct> = products.mapNotNull { product ->
         val (property, roomType) = lookup.resolve(product) ?: return@mapNotNull null
+        // 스냅샷 ≠ 실시간 어긋남을 관측만 한다(advisory) — 스냅샷을 그대로 쓰므로 결과·판정은 불변
+        diagnoseDrift(supplier, property, roomType, product)
         val availability = AvailabilityPolicy.judge(stayDates, product.remainingByDate)
         // 판정 분포 기록 — 보수적 노출 정책이 조용히 빼는 상품의 규모를 정량화한다 (docs/MONITORING.md)
         metrics.recordAvailability(supplier, availability)
@@ -140,6 +144,38 @@ class StaySearchService(
                 currency = product.currency,
             ),
         )
+    }
+
+    /**
+     * 카탈로그 스냅샷과 실시간 응답의 어긋남(드리프트)을 진단한다 — advisory.
+     *
+     * 검색은 스냅샷 값을 authoritative 로 그대로 쓰므로(결과·판정 불변), 여기서는 "둘이 다르다"는 사실만
+     * 경고 로그·지표로 드러낸다. 이름·정원이 바뀌었는데 동기화가 밀린 경우를 상품 단위로 조기 감지하는
+     * 신호이며, 미매핑(`unmapped`)과 층위가 다르다("매핑은 있는데 내용이 낡음"). 오르면 동기화 트리거라는
+     * 운영 액션으로 이어진다 (docs/QUARANTINE.md, docs/MONITORING.md).
+     */
+    private fun diagnoseDrift(supplier: Supplier, property: Property, roomType: RoomType, product: SupplierStayProduct) {
+        if (property.name != product.propertyName) {
+            log.warn(
+                "catalog drift: supplier={} level=property field=name code={} snapshot={} live={}",
+                supplier, product.supplierPropertyCode, property.name, product.propertyName,
+            )
+            metrics.recordDrift(supplier, "property", "name")
+        }
+        if (roomType.name != product.roomTypeName) {
+            log.warn(
+                "catalog drift: supplier={} level=roomType field=name code={} snapshot={} live={}",
+                supplier, product.supplierRoomTypeCode, roomType.name, product.roomTypeName,
+            )
+            metrics.recordDrift(supplier, "roomType", "name")
+        }
+        if (roomType.maxOccupancy != product.maxOccupancy) {
+            log.warn(
+                "catalog drift: supplier={} level=roomType field=occupancy code={} snapshot={} live={}",
+                supplier, product.supplierRoomTypeCode, roomType.maxOccupancy, product.maxOccupancy,
+            )
+            metrics.recordDrift(supplier, "roomType", "occupancy")
+        }
     }
 
     private sealed interface ChunkOutcome {
