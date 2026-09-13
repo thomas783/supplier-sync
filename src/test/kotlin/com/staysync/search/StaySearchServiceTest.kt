@@ -98,6 +98,29 @@ class StaySearchServiceTest {
     }
 
     @Test
+    fun `드리프트 진단 - 스냅샷과 다른 실시간 이름·정원은 지표로 드러나되 결과는 스냅샷을 쓴다`() {
+        // 스냅샷(B_LOOKUP)은 이름 "Riverside Hotel Seoul"·정원 2. 실시간에서 숙소명·정원이 어긋난 상품을 준다
+        val drifted = B_PRODUCT.copy(propertyName = "이름 바뀐 리버사이드", maxOccupancy = 9)
+        val registry = SimpleMeterRegistry()
+        val clientB = FakeSupplierClient(Supplier.B) { Mono.just(listOf(drifted)) }
+
+        val result = service(
+            listOf(clientB),
+            mapOf(Supplier.B to plan(Supplier.B, listOf("B77120"), B_LOOKUP)),
+            metrics = SupplierMetrics(registry),
+        ).search(criteria)
+
+        // 결과는 스냅샷 값을 그대로 쓴다 — 드리프트는 결과·판정에 영향 없는 advisory
+        val stay = result.stays.single()
+        assertEquals("Riverside Hotel Seoul", stay.property.name)
+        assertEquals(2, stay.roomType.maxOccupancy)
+        // 어긋난 축만 지표로 잡힌다(숙소명·정원). 객실명은 스냅샷과 일치하므로 안 잡힌다
+        assertEquals(1.0, driftCount(registry, "property", "name"))
+        assertEquals(1.0, driftCount(registry, "roomType", "occupancy"))
+        assertEquals(0.0, driftCount(registry, "roomType", "name"))
+    }
+
+    @Test
     fun `정규화 실패 - 깨진 금액은 청크 실패로 흡수되되 내부 메시지는 노출되지 않는다`() {
         // 음수 금액에 가드를 더하지 않는 대신, 도메인 불변식(Price)이 던진 예외가 조용히 사라지지 않고
         // 청크 단위 부분 실패로 드러나는 것을 고정한다. 단, 공개 reason 은 불투명한 분류 문자열이어야
@@ -229,8 +252,9 @@ class StaySearchServiceTest {
         clients: List<SupplierClient>,
         plans: Map<Supplier, SupplierQueryPlan>,
         resilience: SupplierResilience = resilience(),
+        metrics: SupplierMetrics = SupplierMetrics(SimpleMeterRegistry()),
     ) = StaySearchService(
-        clients, FakeMappingQueryService(plans), resilience, SupplierMetrics(SimpleMeterRegistry()), SUPPLIER_PROPERTIES,
+        clients, FakeMappingQueryService(plans), resilience, metrics, SUPPLIER_PROPERTIES,
     )
 
     // 운영 yml 과 같은 정책(첫 시도 + 재시도 1회, retryable 필터)을 코드로 재현하되 대기는 1ms 로 줄인다.
@@ -253,6 +277,9 @@ class StaySearchServiceTest {
         codes: List<String>,
         lookup: MappingLookup = MappingLookup(supplier, emptyMap(), emptyMap(), SupplierMetrics(SimpleMeterRegistry())),
     ) = SupplierQueryPlan(supplier, codes, lookup)
+
+    private fun driftCount(registry: SimpleMeterRegistry, level: String, field: String): Double =
+        registry.counter("supplier.stayproducts.drift", "supplier", "B", "level", level, "field", field).count()
 
     /** 조회 계획을 고정값으로 주는 페이크 — 리포지토리는 쓰지 않지만 부모 생성자가 요구해 자리만 채운다. */
     private class FakeMappingQueryService(
